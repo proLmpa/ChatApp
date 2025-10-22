@@ -1,10 +1,6 @@
 package com.chat.share
 
-import java.io.ByteArrayOutputStream
-import java.io.DataInputStream
-import java.io.DataOutputStream
-import java.io.IOException
-import java.io.InputStream
+import java.io.*
 import java.nio.charset.StandardCharsets
 
 /*
@@ -63,6 +59,7 @@ fun createPacket(type: Int, bodyData: String): ByteArray {
     dos.writeInt(length)
     dos.writeInt(type)
     dos.write(bodyBytes)
+    dos.flush()
 
     return baos.toByteArray()
 }
@@ -79,6 +76,7 @@ fun readPacket(inputStream: InputStream): Packet {
     val type = dis.readInt()
 
     val body = ByteArray(length - 8)
+    dis.readFully(body)
 
     return Packet(length, type, body)
 }
