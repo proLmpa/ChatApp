@@ -9,6 +9,10 @@ import java.io.OutputStream
 import java.net.Socket
 import kotlin.concurrent.thread
 
+/**
+ * 클라이언트의 의도적 종료(graceful shutdown) 상태를 스레드 간에 공유하기 위한 플래그.
+ * 메인 스레드(송신 루프)가 'exit'을 입력했을 때, 수신 스레드가 이를 정상 종료로 인식하게 돕습니다.
+ */
 data class ShutdownFlag (var isIntentional: Boolean = false)
 
 fun main() {
@@ -61,6 +65,12 @@ fun main() {
     }
 }
 
+/**
+ * 패킷을 생성하고 서버로 전송하는 함수.
+ * @param outputStream 서버 소켓의 출력 스트림
+ * @param type 패킷 유형 (예: CHAT_MESSAGE, REGISTER_NAME)
+ * @param data 패킷 바디에 포함할 문자열 데이터
+ */
 private fun sendPacket(outputStream: OutputStream, type: Int, data: String) {
     val packetBytes = createPacket(type, data)
 
@@ -73,6 +83,12 @@ private fun sendPacket(outputStream: OutputStream, type: Int, data: String) {
 
 }
 
+/**
+ * 서버로부터 메시지를 지속적으로 수신하는 스레드 로직.
+ * @param inputStream 서버 소켓의 입력 스트림
+ * @param socket 연결 소켓 객체 (상태 확인용)
+ * @param shutdownFlag 의도적 종료 상태 플래그
+ */
 private fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFlag: ShutdownFlag) {
     try {
         while (socket.isConnected && !socket.isInputShutdown) {
@@ -97,6 +113,11 @@ private fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFlag
     }
 }
 
+/**
+ * 사용자 입력을 받아 서버로 메시지를 보내는 메인 스레드의 루프.
+ * @param outputStream 서버 소켓의 출력 스트림
+ * @param shutdownFlag 의도적 종료 상태 플래그
+ */
 private fun sendMessageLoop(outputStream: OutputStream, shutdownFlag: ShutdownFlag) {
     while (true) {
         val input = readlnOrNull() ?: continue

@@ -11,6 +11,11 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
+/**
+ * 클라이언트의 세션 정보를 저장하는 데이터 클래스.
+ * sentCount: 클라이언트가 보낸 채팅 메시지 수 (CHAT_MESSAGE 기준)
+ * receivedCount: 클라이언트가 받은 채팅 메시지 수 (CHAT_MESSAGE 기준)
+ */
 data class ClientData (
     val id: String,
     var name: String? = null,
@@ -24,15 +29,21 @@ val clients = mutableMapOf<String, ClientHandler>()
 // 공유 자원에 대한 접근을 동기화하기 위한 락
 val clientMapLock = ReentrantLock()
 
+// 개별 클라이언트의 통신 및 세션 관리를 담당하는 스레드 핸들러
 class ClientHandler(private val clientSocket: Socket, private val clientId: String): Thread() {
     private val clientData = ClientData(clientId)
-    // ::isInitialized 검사를 위해 lateinit 사용
+    // ::isInitialized 검사를 위한 lateinit 사용
     private lateinit var inputStream: InputStream
     private lateinit var outputStream: OutputStream
 
     // 특정 클라이언트의 출력 스트림 접근을 동기화하기 위한 락
     private val clientOutputLock = ReentrantLock()
 
+    /**
+     * 클라이언트에게 패킷 바이트를 전송합니다.
+     * 이 함수는 순수하게 I/O만 담당하며, 카운팅 로직은 호출부(broadcast)에서 처리합니다.
+     * @param packetBytes 전송할 패킷의 바이트 배열
+     */
     fun sendPacket(packetBytes: ByteArray) {
         clientOutputLock.withLock {
             try {
@@ -47,6 +58,13 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
         }
     }
 
+    /**
+     * 자신을 제외한 모든 클라이언트에게 패킷을 전파(Broadcast)합니다.
+     * 카운팅 로직이 이 함수 내부에서 처리됩니다.
+     * @param packetBytes 전송할 패킷의 바이트 배열
+     * @param senderId 메시지 발신자의 ID (브로드캐스트에서 제외)
+     * @param packetType 카운팅 여부를 결정하기 위한 패킷 타입
+     */
     private fun broadcast(packetBytes: ByteArray, senderId: String? = null, packetType: Int) {
         clientMapLock.withLock {
             clients.values.forEach { handler ->
@@ -81,7 +99,7 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
         }
     }
 
-    // Add client
+    // 클라이언트 추가 및 핸들러 등록
     private fun handleNameRegistration() {
         clientMapLock.withLock {
             clients[clientId] = this
@@ -115,7 +133,7 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
         println(connectedMessage)
     }
 
-    // Listener - Handle Client Messages
+    // 클라이언트 패킷 유형에 따른 처리 리스너
     private fun listenForMessages() {
         while (clientSocket.isConnected && !clientSocket.isInputShutdown) {
             val packet = readPacket(inputStream)
@@ -138,7 +156,7 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
         }
     }
 
-    // Remove client
+    // 클라이언트 제거 및 disconnect 통지
     private fun handleClientDisconnect() {
         val name = clientData.name ?: clientId
         val sent = clientData.sentCount.get()
