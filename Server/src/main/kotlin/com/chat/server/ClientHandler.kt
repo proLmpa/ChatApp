@@ -26,14 +26,13 @@ val clientMapLock = ReentrantLock()
 
 class ClientHandler(private val clientSocket: Socket, private val clientId: String): Thread() {
     private val clientData = ClientData(clientId)
-    // TODO - lateinit 사용 이유 파악
+    // ::isInitialized 검사를 위해 lateinit 사용
     private lateinit var inputStream: InputStream
     private lateinit var outputStream: OutputStream
 
     // 특정 클라이언트의 출력 스트림 접근을 동기화하기 위한 락
     private val clientOutputLock = ReentrantLock()
 
-    // 1. 패킷 전송
     fun sendPacket(packetBytes: ByteArray) {
         clientOutputLock.withLock {
             try {
@@ -41,8 +40,6 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
 
                 outputStream.write(packetBytes)
                 outputStream.flush()
-
-                clientData.receivedCount.incrementAndGet()
             } catch (_: IOException) {
                 println("[Server] Error: Failed to send packet to ${clientData.name ?: clientId}.")
                 clientSocket.close()
@@ -50,18 +47,21 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
         }
     }
 
-    // 2. 전체 broadcast
-    private fun broadcast(packetBytes: ByteArray, senderId: String? = null) {
+    private fun broadcast(packetBytes: ByteArray, senderId: String? = null, packetType: Int) {
         clientMapLock.withLock {
             clients.values.forEach { handler ->
                 if (handler.clientData.id != senderId) {
                     handler.sendPacket(packetBytes)
+
+                    if (packetType == PacketType.CHAT_MESSAGE) {
+                        handler.clientData.receivedCount.incrementAndGet()
+                    }
                 }
             }
         }
     }
 
-    // 3. 메인 로직
+    // 메인 로직
     override fun run() = try {
         inputStream = clientSocket.getInputStream()
         outputStream = clientSocket.getOutputStream()
@@ -81,7 +81,7 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
         }
     }
 
-    // 4. Add client
+    // Add client
     private fun handleNameRegistration() {
         clientMapLock.withLock {
             clients[clientId] = this
@@ -111,34 +111,34 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
         clientData.name = clientName
 
         val connectedMessage = "'$clientName' entered."
-        broadcast(createPacket(PacketType.SERVER_INFO, connectedMessage))
+        broadcast(createPacket(PacketType.SERVER_INFO, connectedMessage), clientData.id, PacketType.SERVER_INFO)
         println(connectedMessage)
     }
 
-    // 5. Listener - Handle Client Messages
+    // Listener - Handle Client Messages
     private fun listenForMessages() {
         while (clientSocket.isConnected && !clientSocket.isInputShutdown) {
             val packet = readPacket(inputStream)
 
             when (packet.type) {
                 PacketType.CHAT_MESSAGE -> {
+                    clientData.sentCount.incrementAndGet()
+
                     val message = packet.getBodyAsString().trim()
-                    val chatMessage = "[$clientData.name] $message"
+                    val chatMessage = "[${clientData.name}] $message"
 
-                    clientData.receivedCount.incrementAndGet()
-
-                    broadcast(createPacket(PacketType.CHAT_MESSAGE, chatMessage), clientData.id)
+                    broadcast(createPacket(PacketType.CHAT_MESSAGE, chatMessage), clientData.id, PacketType.CHAT_MESSAGE)
                     println("Chat from ${clientData.name}: $message")
                 }
                 PacketType.DISCONNECT_REQUEST -> {
-                    println("Client ${clientData.name} sent DISCONNECT_REQUEST.")
+                    println("Client '${clientData.name}' sent DISCONNECT_REQUEST.")
                     return
                 }
             }
         }
     }
 
-    // 6. Remove client
+    // Remove client
     private fun handleClientDisconnect() {
         val name = clientData.name ?: clientId
         val sent = clientData.sentCount.get()
@@ -149,8 +149,10 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
         }
 
         val disconnectedMessage = "'$name' disconnected. (Send: $sent, Received: $received)"
+        val disconnectedPacket = createPacket(PacketType.DISCONNECT_INFO, disconnectedMessage)
 
-        broadcast(createPacket(PacketType.DISCONNECT_INFO, disconnectedMessage))
+        sendPacket(disconnectedPacket)
+        broadcast(disconnectedPacket, clientData.id, PacketType.DISCONNECT_INFO)
         println(disconnectedMessage)
 
         clientSocket.close()
