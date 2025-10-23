@@ -9,6 +9,8 @@ import java.io.OutputStream
 import java.net.Socket
 import kotlin.concurrent.thread
 
+data class ShutdownFlag (var isIntentional: Boolean = false)
+
 fun main() {
     val server = "localhost"
     val port = 8080
@@ -32,6 +34,8 @@ fun main() {
     println("'$name' entered. (type 'exit' to escape.)")
 
     if (socket != null) {
+        val shutdownFlag = ShutdownFlag(false)
+
         try {
             val outputStream = socket.getOutputStream()
             val inputStream = socket.getInputStream()
@@ -41,11 +45,11 @@ fun main() {
 
             // 2. 서버 메시지 수신 전용 스레드
             val receiveThread = thread(isDaemon = true) {
-                receivePacket(inputStream, socket)
+                receivePacket(inputStream, socket, shutdownFlag)
             }
 
             // 3. 메시지 송신 루프 (메인 스레드)
-            sendMessageLoop(outputStream)
+            sendMessageLoop(outputStream, shutdownFlag)
 
             receiveThread.join()
         } catch (e: Exception) {
@@ -69,7 +73,7 @@ private fun sendPacket(outputStream: OutputStream, type: Int, data: String) {
 
 }
 
-private fun receivePacket(inputStream: InputStream, socket: Socket) {
+private fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFlag: ShutdownFlag) {
     try {
         while (socket.isConnected && !socket.isInputShutdown) {
             val packet = readPacket(inputStream)
@@ -83,18 +87,23 @@ private fun receivePacket(inputStream: InputStream, socket: Socket) {
             }
         }
     } catch (_: IOException) {
-        println("Error: Server disconnected.")
+        if (shutdownFlag.isIntentional) {
+            println("Local shutdown complete.")
+        } else {
+            println("Error: Server disconnected.")
+        }
     } catch (e: Exception) {
         println("Received thread - Error: ${e.message}")
     }
 }
 
-private fun sendMessageLoop(outputStream: OutputStream) {
+private fun sendMessageLoop(outputStream: OutputStream, shutdownFlag: ShutdownFlag) {
     while (true) {
         val input = readlnOrNull() ?: continue
 
         if (input.equals("exit", ignoreCase = true)) {
             sendPacket(outputStream, PacketType.DISCONNECT_REQUEST, "")
+            shutdownFlag.isIntentional = true
             break
         }
 
