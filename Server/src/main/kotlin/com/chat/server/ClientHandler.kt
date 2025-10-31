@@ -31,8 +31,8 @@ val clientMapLock = ReentrantLock()
 
 // 개별 클라이언트의 통신 및 세션 관리를 담당하는 스레드 핸들러
 class ClientHandler(private val clientSocket: Socket, private val clientId: String): Thread() {
-    private val clientData = ClientData(clientId)
-    // ::isInitialized 검사를 위한 lateinit 사용
+    internal val clientData = ClientData(clientId)
+    // ::isInitialized 검사를 위한 late init 사용
     private lateinit var inputStream: InputStream
     private lateinit var outputStream: OutputStream
 
@@ -65,11 +65,11 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
      * @param senderId 메시지 발신자의 ID (브로드캐스트에서 제외)
      * @param packetType 카운팅 여부를 결정하기 위한 패킷 타입
      */
-    private fun broadcast(packetBytes: ByteArray, senderId: String? = null, packetType: Int) {
+    internal fun broadcast(packetBytes: ByteArray?, senderId: String? = null, packetType: Int) {
         clientMapLock.withLock {
             clients.values.forEach { handler ->
                 if (handler.clientData.id != senderId) {
-                    handler.sendPacket(packetBytes)
+                    handler.sendPacket(packetBytes!!)
 
                     if (packetType == PacketType.CHAT_MESSAGE) {
                         handler.clientData.receivedCount.incrementAndGet()
@@ -100,7 +100,7 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
     }
 
     // 클라이언트 추가 및 핸들러 등록
-    private fun handleNameRegistration() {
+    internal fun handleNameRegistration() {
         clientMapLock.withLock {
             clients[clientId] = this
         }
@@ -134,7 +134,7 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
     }
 
     // 클라이언트 패킷 유형에 따른 처리 리스너
-    private fun listenForMessages() {
+    internal fun listenForMessages() {
         while (clientSocket.isConnected && !clientSocket.isInputShutdown) {
             val packet = readPacket(inputStream)
 
@@ -157,7 +157,7 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
     }
 
     // 클라이언트 제거 및 disconnect 통지
-    private fun handleClientDisconnect() {
+    internal fun handleClientDisconnect() {
         val name = clientData.name ?: clientId
         val sent = clientData.sentCount.get()
         val received = clientData.receivedCount.get()
