@@ -71,7 +71,7 @@ fun main() {
  * @param type 패킷 유형 (예: CHAT_MESSAGE, REGISTER_NAME)
  * @param data 패킷 바디에 포함할 문자열 데이터
  */
-private fun sendPacket(outputStream: OutputStream, type: Int, data: String) {
+internal fun sendPacket(outputStream: OutputStream, type: Int, data: String) {
     val packetBytes = createPacket(type, data)
 
     try {
@@ -89,7 +89,7 @@ private fun sendPacket(outputStream: OutputStream, type: Int, data: String) {
  * @param socket 연결 소켓 객체 (상태 확인용)
  * @param shutdownFlag 의도적 종료 상태 플래그
  */
-private fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFlag: ShutdownFlag) {
+internal fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFlag: ShutdownFlag) {
     try {
         while (socket.isConnected && !socket.isInputShutdown) {
             val packet = readPacket(inputStream)
@@ -118,7 +118,7 @@ private fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFlag
  * @param outputStream 서버 소켓의 출력 스트림
  * @param shutdownFlag 의도적 종료 상태 플래그
  */
-private fun sendMessageLoop(outputStream: OutputStream, shutdownFlag: ShutdownFlag) {
+internal fun sendMessageLoop(outputStream: OutputStream, shutdownFlag: ShutdownFlag) {
     while (true) {
         val input = readlnOrNull() ?: continue
 
