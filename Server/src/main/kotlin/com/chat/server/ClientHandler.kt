@@ -65,7 +65,7 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
      * @param senderId 메시지 발신자의 ID (브로드캐스트에서 제외)
      * @param packetType 카운팅 여부를 결정하기 위한 패킷 타입
      */
-    internal fun broadcast(packetBytes: ByteArray?, senderId: String? = null, packetType: Int) {
+    internal fun broadcast(packetBytes: ByteArray?, senderId: String? = null, packetType: PacketType) {
         clientMapLock.withLock {
             clients.values.forEach { handler ->
                 if (handler.clientData.id != senderId) {
@@ -152,6 +152,8 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
                     println("Client '${clientData.name}' sent DISCONNECT_REQUEST.")
                     return
                 }
+
+                else -> {}
             }
         }
     }

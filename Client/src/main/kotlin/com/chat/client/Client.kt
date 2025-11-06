@@ -71,14 +71,14 @@ fun main() {
  * @param type 패킷 유형 (예: CHAT_MESSAGE, REGISTER_NAME)
  * @param data 패킷 바디에 포함할 문자열 데이터
  */
-internal fun sendPacket(outputStream: OutputStream, type: Int, data: String) {
+internal fun sendPacket(outputStream: OutputStream, type: PacketType, data: String) {
     val packetBytes = createPacket(type, data)
 
     try {
         outputStream.write(packetBytes)
         outputStream.flush()
-    } catch (_: IOException) {
-        println("Error: Message could not be sent.")
+    } catch (e: IOException) {
+        println("Error: Failed to send packet: ${e.message}")
     }
 
 }
@@ -91,7 +91,7 @@ internal fun sendPacket(outputStream: OutputStream, type: Int, data: String) {
  */
 internal fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFlag: ShutdownFlag) {
     try {
-        while (socket.isConnected && !socket.isInputShutdown) {
+        while (socket.isClosed && !socket.isInputShutdown) {
             val packet = readPacket(inputStream)
             val message = packet.getBodyAsString()
 
