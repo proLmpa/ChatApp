@@ -56,46 +56,49 @@ data class Packet (
     }
 }
 
-/**
- * 패킷 종류와 문자열 데이터를 받아 네트워크 전송을 위한 바이트 배열(byte[])로 변환합니다.
- * @param type 패킷의 종류 (PacketType)
- * @param bodyData 패킷 바디에 포함할 문자열 데이터
- * @return 전송 준비가 완료된 패킷의 바이트 배열
- */
-fun createPacket(type: PacketType, bodyData: String): ByteArray {
-    val bodyBytes = bodyData.toByteArray()
-    val length = 8 + bodyBytes.size
+object Protocol {
+    /**
+     * 객체 데이터를 포함한 패킷을 생성합니다.
+     * @param type 패킷 종류
+     * @param data 패킷 바디로 직렬화할 객체 (ex: data class)
+     */
+    inline fun <reified T> createPacket(type: PacketType, data: T): ByteArray {
+        val bodyBytes = when(data) {
+            is String -> data.toByteArray(StandardCharsets.UTF_8)
+            else -> JsonUtil.toJsonBytes(data)
+        }
+        val length = 8 + bodyBytes.size
 
-    val baos = ByteArrayOutputStream()
-    val dos = DataOutputStream(baos)
+        val baos = ByteArrayOutputStream()
+        val dos = DataOutputStream(baos)
 
-    dos.writeInt(length)
-    dos.writeInt(type.code)
-    dos.write(bodyBytes)
-    dos.flush()
+        dos.writeInt(length)
+        dos.writeInt(type.code)
+        dos.write(bodyBytes)
+        dos.flush()
 
-    return baos.toByteArray()
-}
-
-/**
- * 네트워크 입력 스트림(InputStream)에서 패킷을 읽어와 Packet 객체로 역직렬화합니다.
- * @param inputStream 네트워크 소켓의 입력 스트림
- * @return 읽어온 Packet 객체
- * @throws IOException 연결이 끊겼거나 I/O 오류 발생 시 예외 발생
- */
-fun readPacket(inputStream: InputStream): Packet {
-    val dis = DataInputStream(inputStream)
-
-    val length = try {
-        dis.readInt()
-    } catch (_: Exception) {
-        throw IOException("Connection closed by peer (EOF).")
+        return baos.toByteArray()
     }
 
-    val type = PacketType.fromCode(dis.readInt())
+    /**
+     * 입력 스트림에서 패킷을 읽어 Packet 객체로 변환합니다.
+     * @throws IOException EOF 또는 연결 종료 시
+     */
+    fun readPacket(inputStream: InputStream): Packet {
+        val dis = DataInputStream(inputStream)
 
-    val body = ByteArray(length - 8)
-    dis.readFully(body)
+        val length = try {
+            dis.readInt()
+        } catch (_: Exception) {
+            throw IOException("Connection closed by peer (EOF).")
+        }
 
-    return Packet(length, type, body)
+        val type = PacketType.fromCode(dis.readInt())
+            ?: throw IOException("Unknown PacketType code")
+
+        val body = ByteArray(length - 8)
+        dis.readFully(body)
+
+        return Packet(length, type, body)
+    }
 }

@@ -21,6 +21,9 @@ subprojects {
     dependencies {
         implementation(kotlin("stdlib"))
 
+        // Jackson Library
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
+
         testImplementation(kotlin("test"))
         // JUnit5
         testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
@@ -44,5 +47,9 @@ subprojects {
             "--add-opens", "java.base/java.net=ALL-UNNAMED",
             "--add-opens", "java.base/java.io=ALL-UNNAMED",
         )
+    }
+
+    tasks.jar {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     }
 }
