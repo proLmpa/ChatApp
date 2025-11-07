@@ -1,8 +1,9 @@
 package com.chat.server
 
+import com.chat.share.Packet
 import com.chat.share.PacketType
-import com.chat.share.createPacket
-import com.chat.share.readPacket
+import com.chat.share.Protocol.createPacket
+import com.chat.share.Protocol.readPacket
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -30,8 +31,12 @@ val clients = mutableMapOf<String, ClientHandler>()
 val clientMapLock = ReentrantLock()
 
 // 개별 클라이언트의 통신 및 세션 관리를 담당하는 스레드 핸들러
-class ClientHandler(private val clientSocket: Socket, private val clientId: String): Thread() {
-    internal val clientData = ClientData(clientId)
+class ClientHandler(
+    private val clientSocket: Socket,
+    private val clientId: String
+): Thread() {
+    val clientData = ClientData(clientId)
+
     // ::isInitialized 검사를 위한 late init 사용
     private lateinit var inputStream: InputStream
     private lateinit var outputStream: OutputStream
@@ -84,51 +89,35 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
         inputStream = clientSocket.getInputStream()
         outputStream = clientSocket.getOutputStream()
 
-        // 1. 이름 등록 대기
-        handleNameRegistration()
+        clientMapLock.withLock {
+            clients[clientId] = this
+        }
 
-        // 2. 메시지 수신 종료
+        println("Client temporary connection accepted: $clientId (waiting for name)")
+        sendPacket(createPacket(PacketType.SERVER_INFO, "Welcome! Please register your name."))
+
         listenForMessages()
     } catch (_: Exception) {
         val clientNameOrId = clientData.name ?: clientId
         println("Client $clientNameOrId disconnected.")
     } finally {
-        // 3. 접속 종료 처리
         if (!clientSocket.isClosed) {
             handleClientDisconnect()
         }
     }
 
     // 클라이언트 추가 및 핸들러 등록
-    internal fun handleNameRegistration() {
-        clientMapLock.withLock {
-            clients[clientId] = this
-        }
-
-        val registerPacket = try {
-            readPacket(inputStream)
-        } catch  (e: IOException) {
-            clientSocket.close()
-            clientMapLock.withLock { clients.remove(clientId) }
-            throw e
-        }
-
-        if (registerPacket.type != PacketType.REGISTER_NAME) {
-            sendPacket(createPacket(PacketType.SERVER_INFO, "Server: Enter your name first."))
-            clientSocket.close()
-            throw IOException("Initial packet was not REGISTER_NAME.")
-        }
+    internal fun handleNameRegistration(registerPacket: Packet) {
 
         val clientName = registerPacket.getBodyAsString().trim()
         if (clientName.isEmpty()) {
-            sendPacket(createPacket(PacketType.SERVER_INFO, "Server: You must enter a name first."))
-            clientSocket.close()
-            throw IOException("Initial packet was not REGISTER_NAME.")
+            sendPacket(createPacket(PacketType.SERVER_INFO, "Server: Name cannot be empty."))
+            return
         }
 
         clientData.name = clientName
 
-        val connectedMessage = "'$clientName' entered."
+        val connectedMessage = "$clientName entered."
         broadcast(createPacket(PacketType.SERVER_INFO, connectedMessage), clientData.id, PacketType.SERVER_INFO)
         println(connectedMessage)
     }
@@ -139,17 +128,20 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
             val packet = readPacket(inputStream)
 
             when (packet.type) {
+                PacketType.REGISTER_NAME -> handleNameRegistration(packet)
                 PacketType.CHAT_MESSAGE -> {
-                    clientData.sentCount.incrementAndGet()
-
+                    val sender = clientData.name ?: clientId
                     val message = packet.getBodyAsString().trim()
-                    val chatMessage = "[${clientData.name}] $message"
+                    val chatMessage = "[$sender] $message"
 
                     broadcast(createPacket(PacketType.CHAT_MESSAGE, chatMessage), clientData.id, PacketType.CHAT_MESSAGE)
-                    println("Chat from ${clientData.name}: $message")
+                    println("Chat from $sender: $message")
+
+                    clientData.sentCount.incrementAndGet()
                 }
                 PacketType.DISCONNECT_REQUEST -> {
-                    println("Client '${clientData.name}' sent DISCONNECT_REQUEST.")
+                    val sender = clientData.name ?: clientId
+                    println("Client $sender sent DISCONNECT_REQUEST.")
                     return
                 }
 
@@ -168,7 +160,7 @@ class ClientHandler(private val clientSocket: Socket, private val clientId: Stri
             clients.remove(clientId)
         }
 
-        val disconnectedMessage = "'$name' disconnected. (Send: $sent, Received: $received)"
+        val disconnectedMessage = "$name disconnected. (Send: $sent, Received: $received)"
         val disconnectedPacket = createPacket(PacketType.DISCONNECT_INFO, disconnectedMessage)
 
         sendPacket(disconnectedPacket)

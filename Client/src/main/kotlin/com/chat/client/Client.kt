@@ -1,8 +1,8 @@
 package com.chat.client
 
 import com.chat.share.PacketType
-import com.chat.share.createPacket
-import com.chat.share.readPacket
+import com.chat.share.Protocol.createPacket
+import com.chat.share.Protocol.readPacket
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -19,14 +19,6 @@ fun main() {
     val server = "localhost"
     val port = 8080
 
-    print("Enter your name: ")
-    val name = readlnOrNull()
-
-    if (name.isNullOrBlank()) {
-        println("Name is required. Program terminated.")
-        return
-    }
-
     val socket = try {
         val s = Socket(server, port)
         println("Connected to server at $server:$port")
@@ -35,24 +27,20 @@ fun main() {
         println("Error: Couldn't connect to server: ${e.message}")
     } as Socket?
 
-    println("'$name' entered. (type 'exit' to escape.)")
+    val shutdownFlag = ShutdownFlag(false)
 
     if (socket != null) {
-        val shutdownFlag = ShutdownFlag(false)
 
         try {
             val outputStream = socket.getOutputStream()
             val inputStream = socket.getInputStream()
 
-            // 1. 클라이언트 이름 등록
-            sendPacket(outputStream, PacketType.REGISTER_NAME, name)
-
-            // 2. 서버 메시지 수신 전용 스레드
+            // 서버 메시지 수신 전용 스레드
             val receiveThread = thread(isDaemon = true) {
                 receivePacket(inputStream, socket, shutdownFlag)
             }
 
-            // 3. 메시지 송신 루프 (메인 스레드)
+            // 메시지 송신 루프 (메인 스레드)
             sendMessageLoop(outputStream, shutdownFlag)
 
             receiveThread.join()
@@ -91,7 +79,7 @@ internal fun sendPacket(outputStream: OutputStream, type: PacketType, data: Stri
  */
 internal fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFlag: ShutdownFlag) {
     try {
-        while (socket.isClosed && !socket.isInputShutdown) {
+        while (socket.isConnected && !socket.isInputShutdown) {
             val packet = readPacket(inputStream)
             val message = packet.getBodyAsString()
 
@@ -119,6 +107,24 @@ internal fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFla
  * @param shutdownFlag 의도적 종료 상태 플래그
  */
 internal fun sendMessageLoop(outputStream: OutputStream, shutdownFlag: ShutdownFlag) {
+    var isRegistered = false
+    var name: String?
+
+    while (!isRegistered) {
+        print("Enter your name: ")
+        val inputName = readlnOrNull()?. trim()
+
+        if (inputName.isNullOrBlank()) {
+            println("Name is required.")
+            continue
+        }
+
+        sendPacket(outputStream, PacketType.REGISTER_NAME, inputName)
+        name = inputName
+        isRegistered = true
+        println("$name registered successfully. (type 'exit' to quit.)")
+    }
+
     while (true) {
         val input = readlnOrNull() ?: continue
 
