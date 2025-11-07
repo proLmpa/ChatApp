@@ -8,11 +8,17 @@ import java.nio.charset.StandardCharsets
  * 클라이언트와 서버가 패킷의 용도를 식별하는 데 사용됩니다.
  */
 enum class PacketType(val code: Int) {
-    REGISTER_NAME(1),
-    CHAT_MESSAGE(2),
-    SERVER_INFO(3),
-    DISCONNECT_INFO(4),
-    DISCONNECT_REQUEST(5);
+    REGISTER_NAME(10),
+    CHAT_MESSAGE(20),
+    SERVER_INFO(30),
+    SERVER_SUCCESS(31),
+    INITIAL_NAME_CHANGE_FAILED(32),
+    UPDATE_NAME(33),
+    UPDATE_NAME_FAILED(34),
+    DISCONNECT_INFO(40),
+    DISCONNECT_REQUEST(41),
+    WHISPER(50),
+    FILE_TRANSFER(60);
 
     companion object {
         fun fromCode(code: Int): PacketType? =

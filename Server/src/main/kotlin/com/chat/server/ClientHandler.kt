@@ -24,10 +24,7 @@ data class ClientData (
     val receivedCount: AtomicInteger = AtomicInteger(0)
 )
 
-// 서버의 모든 클라이언트 정보를 담는 공유 자원 (Map)
 val clients = mutableMapOf<String, ClientHandler>()
-
-// 공유 자원에 대한 접근을 동기화하기 위한 락
 val clientMapLock = ReentrantLock()
 
 // 개별 클라이언트의 통신 및 세션 관리를 담당하는 스레드 핸들러
@@ -36,12 +33,9 @@ class ClientHandler(
     private val clientId: String
 ): Thread() {
     val clientData = ClientData(clientId)
-
-    // ::isInitialized 검사를 위한 late init 사용
     private lateinit var inputStream: InputStream
     private lateinit var outputStream: OutputStream
 
-    // 특정 클라이언트의 출력 스트림 접근을 동기화하기 위한 락
     private val clientOutputLock = ReentrantLock()
 
     /**
@@ -106,22 +100,6 @@ class ClientHandler(
         }
     }
 
-    // 클라이언트 추가 및 핸들러 등록
-    internal fun handleNameRegistration(registerPacket: Packet) {
-
-        val clientName = registerPacket.getBodyAsString().trim()
-        if (clientName.isEmpty()) {
-            sendPacket(createPacket(PacketType.SERVER_INFO, "Server: Name cannot be empty."))
-            return
-        }
-
-        clientData.name = clientName
-
-        val connectedMessage = "$clientName entered."
-        broadcast(createPacket(PacketType.SERVER_INFO, connectedMessage), clientData.id, PacketType.SERVER_INFO)
-        println(connectedMessage)
-    }
-
     // 클라이언트 패킷 유형에 따른 처리 리스너
     internal fun listenForMessages() {
         while (clientSocket.isConnected && !clientSocket.isInputShutdown) {
@@ -135,7 +113,7 @@ class ClientHandler(
                     val chatMessage = "[$sender] $message"
 
                     broadcast(createPacket(PacketType.CHAT_MESSAGE, chatMessage), clientData.id, PacketType.CHAT_MESSAGE)
-                    println("Chat from $sender: $message")
+                    println(chatMessage)
 
                     clientData.sentCount.incrementAndGet()
                 }
@@ -144,10 +122,77 @@ class ClientHandler(
                     println("Client $sender sent DISCONNECT_REQUEST.")
                     return
                 }
+                PacketType.UPDATE_NAME -> {
+                    handleUpdateNameRequest(packet)
+                }
 
                 else -> {}
             }
         }
+    }
+
+    // 클라이언트 추가 및 핸들러 등록
+    internal fun handleNameRegistration(packet: Packet) {
+        val clientName = packet.getBodyAsString().trim()
+
+        if (handleNameIsBlank(clientName, true)) return
+        if (handleNameDuplication(clientName, true)) return
+
+        clientData.name = clientName
+
+        val connectedMessage = "$clientName entered."
+        sendPacket(createPacket(PacketType.SERVER_SUCCESS, "Welcome, $clientName!"))
+        broadcast(createPacket(PacketType.SERVER_INFO, connectedMessage), clientData.id, PacketType.SERVER_INFO)
+        println(connectedMessage)
+    }
+
+    // 클라이언트 이름 공백 확인
+    internal fun handleNameIsBlank(clientName: String, isInitial: Boolean = false): Boolean {
+        if (clientName.isEmpty()) {
+            val type = if (isInitial) PacketType.INITIAL_NAME_CHANGE_FAILED else PacketType.UPDATE_NAME_FAILED
+            sendPacket(createPacket(type, "Name cannot be empty."))
+            return true
+        }
+        return false
+    }
+
+    // 클라이언트 이름 중복 확인
+    internal fun handleNameDuplication(clientName: String, isInitial: Boolean): Boolean {
+        var duplicateFlag = false
+        val senderId = clientData.id
+
+        clientMapLock.withLock {
+            for (handler in clients.values) {
+                val existingName = handler.clientData.name
+
+                if (existingName != null && existingName == clientName && handler.clientData.id != senderId) {
+                    duplicateFlag = true
+                    break
+                }
+            }
+        }
+
+        if (duplicateFlag) {
+            val type = if (isInitial) PacketType.INITIAL_NAME_CHANGE_FAILED else PacketType.UPDATE_NAME_FAILED
+            sendPacket(createPacket(type, "Name is duplicated."))
+        }
+
+        return duplicateFlag
+    }
+
+    internal fun handleUpdateNameRequest(packet: Packet) {
+        val clientName = packet.getBodyAsString().trim()
+
+        if (handleNameIsBlank(clientName, false)) return
+        if (handleNameDuplication(clientName, false)) return
+
+        val oldName = clientData.name
+        clientData.name = clientName
+
+        val nameUpdateMessage = "User '$oldName' is changed to '$clientName'."
+        sendPacket(createPacket(PacketType.SERVER_SUCCESS, nameUpdateMessage))
+        broadcast(createPacket(PacketType.SERVER_INFO, nameUpdateMessage), clientData.id, PacketType.SERVER_INFO)
+        println(nameUpdateMessage)
     }
 
     // 클라이언트 제거 및 disconnect 통지

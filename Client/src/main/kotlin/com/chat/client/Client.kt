@@ -14,6 +14,7 @@ import kotlin.concurrent.thread
  * 메인 스레드(송신 루프)가 'exit'을 입력했을 때, 수신 스레드가 이를 정상 종료로 인식하게 돕습니다.
  */
 data class ShutdownFlag (var isIntentional: Boolean = false)
+data class ClientState (@Volatile var isRegistered: Boolean = false)
 
 fun main() {
     val server = "localhost"
@@ -27,21 +28,22 @@ fun main() {
         println("Error: Couldn't connect to server: ${e.message}")
     } as Socket?
 
-    val shutdownFlag = ShutdownFlag(false)
-
     if (socket != null) {
 
         try {
+            val shutdownFlag = ShutdownFlag(false)
+            val clientState = ClientState(false)
+
             val outputStream = socket.getOutputStream()
             val inputStream = socket.getInputStream()
 
             // 서버 메시지 수신 전용 스레드
             val receiveThread = thread(isDaemon = true) {
-                receivePacket(inputStream, socket, shutdownFlag)
+                receivePacket(inputStream, socket, shutdownFlag, clientState)
             }
 
             // 메시지 송신 루프 (메인 스레드)
-            sendMessageLoop(outputStream, shutdownFlag)
+            sendMessageLoop(outputStream, shutdownFlag, clientState)
 
             receiveThread.join()
         } catch (e: Exception) {
@@ -59,7 +61,11 @@ fun main() {
  * @param type 패킷 유형 (예: CHAT_MESSAGE, REGISTER_NAME)
  * @param data 패킷 바디에 포함할 문자열 데이터
  */
-internal fun sendPacket(outputStream: OutputStream, type: PacketType, data: String) {
+internal fun sendPacket(
+    outputStream: OutputStream,
+    type: PacketType,
+    data: String
+) {
     val packetBytes = createPacket(type, data)
 
     try {
@@ -77,17 +83,36 @@ internal fun sendPacket(outputStream: OutputStream, type: PacketType, data: Stri
  * @param socket 연결 소켓 객체 (상태 확인용)
  * @param shutdownFlag 의도적 종료 상태 플래그
  */
-internal fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFlag: ShutdownFlag) {
+internal fun receivePacket(
+    inputStream: InputStream,
+    socket: Socket,
+    shutdownFlag: ShutdownFlag,
+    clientState: ClientState
+) {
     try {
         while (socket.isConnected && !socket.isInputShutdown) {
             val packet = readPacket(inputStream)
             val message = packet.getBodyAsString()
 
             when (packet.type) {
-                PacketType.CHAT_MESSAGE -> println(message)
                 PacketType.SERVER_INFO -> println("Info: $message")
+                PacketType.INITIAL_NAME_CHANGE_FAILED -> {
+                    println("Warning: $message")
+                    clientState.isRegistered = false
+                    println("Please enter another name")
+                }
+                PacketType.SERVER_SUCCESS -> {
+                    println("Success: $message")
+                    clientState.isRegistered = true
+                    println("You can now chat. (type '/n <name>' to rename, 'exit' to quit)")
+                }
+                PacketType.UPDATE_NAME_FAILED -> {
+                    println("Warning: $message")
+                    println("Try another name with /n <new_name>")
+                }
+                PacketType.CHAT_MESSAGE -> println(message)
                 PacketType.DISCONNECT_INFO -> println("Disconnect: $message")
-                else -> println("Unknown: $message")
+                else -> {}
             }
         }
     } catch (_: IOException) {
@@ -106,32 +131,39 @@ internal fun receivePacket(inputStream: InputStream, socket: Socket, shutdownFla
  * @param outputStream 서버 소켓의 출력 스트림
  * @param shutdownFlag 의도적 종료 상태 플래그
  */
-internal fun sendMessageLoop(outputStream: OutputStream, shutdownFlag: ShutdownFlag) {
-    var isRegistered = false
-    var name: String?
-
-    while (!isRegistered) {
-        print("Enter your name: ")
-        val inputName = readlnOrNull()?. trim()
-
-        if (inputName.isNullOrBlank()) {
-            println("Name is required.")
-            continue
-        }
-
-        sendPacket(outputStream, PacketType.REGISTER_NAME, inputName)
-        name = inputName
-        isRegistered = true
-        println("$name registered successfully. (type 'exit' to quit.)")
-    }
-
+internal fun sendMessageLoop(
+    outputStream: OutputStream,
+    shutdownFlag: ShutdownFlag,
+    clientState: ClientState
+) {
     while (true) {
-        val input = readlnOrNull() ?: continue
+        val input = readlnOrNull()?.trim() ?: continue
 
         if (input.equals("exit", ignoreCase = true)) {
             sendPacket(outputStream, PacketType.DISCONNECT_REQUEST, "")
             shutdownFlag.isIntentional = true
             break
+        }
+
+        if (!clientState.isRegistered) {
+            val trimmed = input.trim()
+            if (trimmed.isEmpty()) {
+                println("Name cannot be empty.")
+                continue
+            }
+
+            sendPacket(outputStream, PacketType.REGISTER_NAME, trimmed)
+            continue
+        }
+
+        if (input.startsWith("/n ")) {
+            val name = input.removePrefix("/n ").trim()
+            if (name.isEmpty()) {
+                println("Usage: /n <new_name>")
+                continue
+            }
+            sendPacket(outputStream, PacketType.UPDATE_NAME, name)
+            continue
         }
 
         if (input.isNotBlank()) {
