@@ -18,6 +18,7 @@ enum class PacketType(val code: Int) {
     DISCONNECT_INFO(40),
     DISCONNECT_REQUEST(41),
     WHISPER(50),
+    USER_NOT_EXISTS(51),
     FILE_TRANSFER(60);
 
     companion object {

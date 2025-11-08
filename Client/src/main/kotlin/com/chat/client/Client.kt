@@ -111,6 +111,8 @@ internal fun receivePacket(
                     println("Try another name with /n <new_name>")
                 }
                 PacketType.CHAT_MESSAGE -> println(message)
+                PacketType.USER_NOT_EXISTS -> println("Info: $message")
+                PacketType.WHISPER -> println(message)
                 PacketType.DISCONNECT_INFO -> println("Disconnect: $message")
                 else -> {}
             }
@@ -151,6 +153,10 @@ internal fun sendMessageLoop(
                 println("Name cannot be empty.")
                 continue
             }
+            if (trimmed.contains(" ")) {
+                println("Name cannot contain spaces.")
+                continue
+            }
 
             sendPacket(outputStream, PacketType.REGISTER_NAME, trimmed)
             continue
@@ -162,7 +168,34 @@ internal fun sendMessageLoop(
                 println("Usage: /n <new_name>")
                 continue
             }
+            if (name.contains(" ")) {
+                println("Name cannot contain spaces.")
+                continue
+            }
+
             sendPacket(outputStream, PacketType.UPDATE_NAME, name)
+            continue
+        }
+
+        if (input.startsWith("/w ")) {
+            val args = input.removePrefix("/w ").trim()
+            val parts = args.split(" ", limit=2)
+
+            if (parts.size < 2) {
+                println("Usage: /w <user_name> <chat>")
+                continue
+            }
+
+            val target = parts[0].trim()
+            val message = parts[1].trim()
+
+            if (target.isEmpty() || message.isEmpty()) {
+                println("Usage: /w <user_name> <chat>")
+                continue
+            }
+
+            val payload = "$target $message"
+            sendPacket(outputStream, PacketType.WHISPER, payload)
             continue
         }
 

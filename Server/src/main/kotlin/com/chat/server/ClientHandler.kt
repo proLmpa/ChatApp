@@ -117,13 +117,17 @@ class ClientHandler(
 
                     clientData.sentCount.incrementAndGet()
                 }
+                PacketType.UPDATE_NAME -> {
+                    handleUpdateNameRequest(packet)
+                }
+                PacketType.WHISPER -> {
+                    handleWhisper(packet)
+                    clientData.sentCount.incrementAndGet()
+                }
                 PacketType.DISCONNECT_REQUEST -> {
                     val sender = clientData.name ?: clientId
                     println("Client $sender sent DISCONNECT_REQUEST.")
                     return
-                }
-                PacketType.UPDATE_NAME -> {
-                    handleUpdateNameRequest(packet)
                 }
 
                 else -> {}
@@ -148,12 +152,14 @@ class ClientHandler(
 
     // 클라이언트 이름 공백 확인
     internal fun handleNameIsBlank(clientName: String, isInitial: Boolean = false): Boolean {
-        if (clientName.isEmpty()) {
-            val type = if (isInitial) PacketType.INITIAL_NAME_CHANGE_FAILED else PacketType.UPDATE_NAME_FAILED
-            sendPacket(createPacket(type, "Name cannot be empty."))
-            return true
+        return when {
+            clientName.isEmpty() -> {
+                val type = if (isInitial) PacketType.INITIAL_NAME_CHANGE_FAILED else PacketType.UPDATE_NAME_FAILED
+                sendPacket(createPacket(type, "Name cannot be empty."))
+                true
+            }
+            else -> false
         }
-        return false
     }
 
     // 클라이언트 이름 중복 확인
@@ -193,6 +199,30 @@ class ClientHandler(
         sendPacket(createPacket(PacketType.SERVER_SUCCESS, nameUpdateMessage))
         broadcast(createPacket(PacketType.SERVER_INFO, nameUpdateMessage), clientData.id, PacketType.SERVER_INFO)
         println(nameUpdateMessage)
+    }
+
+    internal fun handleWhisper(packet: Packet) {
+        val body = packet.getBodyAsString()
+        val parts = body.split(" ", limit = 2)
+        val targetName = parts[0]
+        val message = parts[1]
+
+        val targetHandler = clientMapLock.withLock {
+            clients.values.firstOrNull { it.clientData.name == targetName }
+        }
+
+        if (targetHandler == null) {
+            sendPacket(createPacket(PacketType.USER_NOT_EXISTS, "User '$targetName' does not exist."))
+            return
+        }
+
+        val msgToTarget = "[${clientData.name} -> ${targetHandler.clientData.name}] $message"
+        val msgToSender = "[You -> ${targetHandler.clientData.name}] $message"
+
+        targetHandler.sendPacket(createPacket(PacketType.WHISPER, msgToTarget))
+        targetHandler.clientData.receivedCount.incrementAndGet()
+
+        sendPacket(createPacket(PacketType.WHISPER, msgToSender))
     }
 
     // 클라이언트 제거 및 disconnect 통지
