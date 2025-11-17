@@ -1,5 +1,6 @@
 package com.chat.server
 
+import com.chat.share.ConnectionService
 import java.net.ServerSocket
 import java.util.UUID
 
@@ -15,7 +16,8 @@ fun main() {
             val clientId = UUID.randomUUID().toString()
             println("[Server] Client connected from ${clientSocket.inetAddress.hostAddress}. ClientId: $clientId")
 
-            ClientHandler(clientSocket, clientId).start()
+            val conn = ConnectionService(clientSocket)
+            ClientHandler(conn, clientId).start()
         }
     } catch (e: Exception) {
         println("[Server] loop error: ${e.message}")

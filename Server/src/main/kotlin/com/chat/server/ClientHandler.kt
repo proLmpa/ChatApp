@@ -1,13 +1,10 @@
 package com.chat.server
 
+import com.chat.share.ConnectionService
 import com.chat.share.Packet
 import com.chat.share.PacketType
 import com.chat.share.Protocol.createPacket
-import com.chat.share.Protocol.readPacket
 import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.Socket
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -29,12 +26,10 @@ val clientMapLock = ReentrantLock()
 
 // 개별 클라이언트의 통신 및 세션 관리를 담당하는 스레드 핸들러
 class ClientHandler(
-    private val clientSocket: Socket,
+    private val conn: ConnectionService,
     private val clientId: String
 ): Thread() {
     val clientData = ClientData(clientId)
-    private lateinit var inputStream: InputStream
-    private lateinit var outputStream: OutputStream
 
     private val clientOutputLock = ReentrantLock()
 
@@ -46,13 +41,10 @@ class ClientHandler(
     fun sendPacket(packetBytes: ByteArray) {
         clientOutputLock.withLock {
             try {
-                if (!::outputStream.isInitialized) return
-
-                outputStream.write(packetBytes)
-                outputStream.flush()
+                conn.writePacket(packetBytes)
             } catch (_: IOException) {
                 println("[Server] Error: Failed to send packet to ${clientData.name ?: clientId}.")
-                clientSocket.close()
+                conn.close()
             }
         }
     }
@@ -80,8 +72,6 @@ class ClientHandler(
 
     // 메인 로직
     override fun run() = try {
-        inputStream = clientSocket.getInputStream()
-        outputStream = clientSocket.getOutputStream()
 
         clientMapLock.withLock {
             clients[clientId] = this
@@ -95,15 +85,15 @@ class ClientHandler(
         val clientNameOrId = clientData.name ?: clientId
         println("Client $clientNameOrId disconnected.")
     } finally {
-        if (!clientSocket.isClosed) {
+        if (conn.isConnected()) {
             handleClientDisconnect()
         }
     }
 
     // 클라이언트 패킷 유형에 따른 처리 리스너
     internal fun listenForMessages() {
-        while (clientSocket.isConnected && !clientSocket.isInputShutdown) {
-            val packet = readPacket(inputStream)
+        while (conn.isConnected() && !conn.inputShutDown()) {
+            val packet = conn.readPacket()
 
             when (packet.type) {
                 PacketType.REGISTER_NAME -> handleNameRegistration(packet)
@@ -242,6 +232,6 @@ class ClientHandler(
         broadcast(disconnectedPacket, clientData.id, PacketType.DISCONNECT_INFO)
         println(disconnectedMessage)
 
-        clientSocket.close()
+        conn.close()
     }
 }
