@@ -6,6 +6,14 @@ plugins {
     id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
+tasks.shadowJar {
+    manifest {
+        attributes["Main-Class"] = "com.chat.client.ClientKt"
+    }
+
+    archiveFileName.set("Client.jar")
+}
+
 //tasks.jar {
 //    // 1. JAR 파일 내부에 실행 정보를 포함하는 MANIFEST.MF 설정
 //    manifest {
