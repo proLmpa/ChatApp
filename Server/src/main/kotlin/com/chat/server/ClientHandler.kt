@@ -58,13 +58,15 @@ class ClientHandler(
      */
     internal fun broadcast(packetBytes: ByteArray?, senderId: String? = null, packetType: PacketType) {
         clientMapLock.withLock {
-            clients.values.forEach { handler ->
-                if (handler.clientData.id != senderId) {
-                    handler.sendPacket(packetBytes!!)
+            val targets = clients.values.filter { it.clientData.id != senderId }
 
-                    if (packetType == PacketType.CHAT_MESSAGE) {
-                        handler.clientData.receivedCount.incrementAndGet()
-                    }
+            if (!targets.any()) return
+
+            targets.forEach { handler ->
+                handler.sendPacket(packetBytes!!)
+
+                if (packetType == PacketType.CHAT_MESSAGE) {
+                    handler.clientData.receivedCount.incrementAndGet()
                 }
             }
         }
@@ -154,26 +156,21 @@ class ClientHandler(
 
     // 클라이언트 이름 중복 확인
     internal fun handleNameDuplication(clientName: String, isInitial: Boolean): Boolean {
-        var duplicateFlag = false
         val senderId = clientData.id
 
-        clientMapLock.withLock {
-            for (handler in clients.values) {
-                val existingName = handler.clientData.name
-
-                if (existingName != null && existingName == clientName && handler.clientData.id != senderId) {
-                    duplicateFlag = true
-                    break
-                }
+        val isDuplicate = clientMapLock.withLock {
+            clients.values.any { handler ->
+                handler.clientData.id != senderId &&
+                handler.clientData.name == clientName
             }
         }
 
-        if (duplicateFlag) {
+        if (isDuplicate) {
             val type = if (isInitial) PacketType.INITIAL_NAME_CHANGE_FAILED else PacketType.UPDATE_NAME_FAILED
             sendPacket(createPacket(type, "Name is duplicated."))
         }
 
-        return duplicateFlag
+        return isDuplicate
     }
 
     internal fun handleUpdateNameRequest(packet: Packet) {
