@@ -1,9 +1,13 @@
 package com.chat.server
 
+import com.chat.share.ChatMessageDTO
 import com.chat.share.ConnectionService
-import com.chat.share.Packet
 import com.chat.share.PacketType
 import com.chat.share.Protocol.createPacket
+import com.chat.share.RegisterNameDTO
+import com.chat.share.ServerInfoDTO
+import com.chat.share.UpdateNameDTO
+import com.chat.share.WhisperDTO
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
@@ -30,7 +34,6 @@ class ClientHandler(
     private val clientId: String
 ): Thread() {
     val clientData = ClientData(clientId)
-
     private val clientOutputLock = ReentrantLock()
 
     /**
@@ -75,12 +78,10 @@ class ClientHandler(
     // 메인 로직
     override fun run() = try {
 
-        clientMapLock.withLock {
-            clients[clientId] = this
-        }
+        clientMapLock.withLock { clients[clientId] = this }
 
         println("Client temporary connection accepted: $clientId (waiting for name)")
-        sendPacket(createPacket(PacketType.SERVER_INFO, "Welcome! Please register your name."))
+        sendPacket(createPacket(PacketType.SERVER_INFO, ServerInfoDTO("Welcome! Please register your name.")))
 
         listenForMessages()
     } catch (_: Exception) {
@@ -98,27 +99,19 @@ class ClientHandler(
             val packet = conn.readPacket()
 
             when (packet.type) {
-                PacketType.REGISTER_NAME -> handleNameRegistration(packet)
+                PacketType.REGISTER_NAME ->
+                    handleNameRegistration(packet.toDTO<RegisterNameDTO>())
                 PacketType.CHAT_MESSAGE -> {
-                    val sender = clientData.name ?: clientId
-                    val message = packet.getBodyAsString().trim()
-                    val chatMessage = "[$sender] $message"
-
-                    broadcast(createPacket(PacketType.CHAT_MESSAGE, chatMessage), clientData.id, PacketType.CHAT_MESSAGE)
-                    println(chatMessage)
-
-                    clientData.sentCount.incrementAndGet()
+                    handleChatMessage(packet.toDTO<ChatMessageDTO>())
                 }
                 PacketType.UPDATE_NAME -> {
-                    handleUpdateNameRequest(packet)
+                    handleUpdateName(packet.toDTO<UpdateNameDTO>())
                 }
                 PacketType.WHISPER -> {
-                    handleWhisper(packet)
-                    clientData.sentCount.incrementAndGet()
+                    handleWhisper(packet.toDTO<WhisperDTO>())
                 }
                 PacketType.DISCONNECT_REQUEST -> {
-                    val sender = clientData.name ?: clientId
-                    println("Client $sender sent DISCONNECT_REQUEST.")
+                    println("Client ${clientData.name ?: clientId} sent DISCONNECT_REQUEST.")
                     return
                 }
 
@@ -128,8 +121,8 @@ class ClientHandler(
     }
 
     // 클라이언트 추가 및 핸들러 등록
-    internal fun handleNameRegistration(packet: Packet) {
-        val clientName = packet.getBodyAsString().trim()
+    internal fun handleNameRegistration(dto: RegisterNameDTO) {
+        val clientName = dto.name
 
         if (handleNameIsBlank(clientName, true)) return
         if (handleNameDuplication(clientName, true)) return
@@ -137,9 +130,19 @@ class ClientHandler(
         clientData.name = clientName
 
         val connectedMessage = "$clientName entered."
-        sendPacket(createPacket(PacketType.SERVER_SUCCESS, "Welcome, $clientName!"))
-        broadcast(createPacket(PacketType.SERVER_INFO, connectedMessage), clientData.id, PacketType.SERVER_INFO)
+        sendPacket(createPacket(PacketType.SERVER_SUCCESS, ServerInfoDTO("Welcome, $clientName!")))
+        broadcast(createPacket(PacketType.SERVER_INFO, ServerInfoDTO(connectedMessage)), clientData.id, PacketType.SERVER_INFO)
         println(connectedMessage)
+    }
+
+    internal fun handleChatMessage(dto: ChatMessageDTO) {
+        val sender = clientData.name ?: clientId
+        val chatMessage = "[$sender] ${dto.message}"
+
+        broadcast(createPacket(PacketType.CHAT_MESSAGE, dto), clientData.id, PacketType.CHAT_MESSAGE)
+        println(chatMessage)
+
+        clientData.sentCount.incrementAndGet()
     }
 
     // 클라이언트 이름 공백 확인
@@ -147,7 +150,7 @@ class ClientHandler(
         return when {
             clientName.isEmpty() -> {
                 val type = if (isInitial) PacketType.INITIAL_NAME_CHANGE_FAILED else PacketType.UPDATE_NAME_FAILED
-                sendPacket(createPacket(type, "Name cannot be empty."))
+                sendPacket(createPacket(type, ServerInfoDTO("Name cannot be empty.")))
                 true
             }
             else -> false
@@ -167,49 +170,46 @@ class ClientHandler(
 
         if (isDuplicate) {
             val type = if (isInitial) PacketType.INITIAL_NAME_CHANGE_FAILED else PacketType.UPDATE_NAME_FAILED
-            sendPacket(createPacket(type, "Name is duplicated."))
+            sendPacket(createPacket(type, ServerInfoDTO("Name is duplicated.")))
         }
 
         return isDuplicate
     }
 
-    internal fun handleUpdateNameRequest(packet: Packet) {
-        val clientName = packet.getBodyAsString().trim()
+    internal fun handleUpdateName(dto: UpdateNameDTO) {
+        val newName = dto.newName
 
-        if (handleNameIsBlank(clientName, false)) return
-        if (handleNameDuplication(clientName, false)) return
+        if (handleNameIsBlank(newName, false)) return
+        if (handleNameDuplication(newName, false)) return
 
         val oldName = clientData.name
-        clientData.name = clientName
+        clientData.name = newName
 
-        val nameUpdateMessage = "User '$oldName' is changed to '$clientName'."
-        sendPacket(createPacket(PacketType.SERVER_SUCCESS, nameUpdateMessage))
-        broadcast(createPacket(PacketType.SERVER_INFO, nameUpdateMessage), clientData.id, PacketType.SERVER_INFO)
-        println(nameUpdateMessage)
+        val msg = "User '$oldName' is changed to '$newName'."
+        sendPacket(createPacket(PacketType.SERVER_SUCCESS, ServerInfoDTO(msg)))
+        broadcast(createPacket(PacketType.SERVER_INFO, ServerInfoDTO(msg)), clientData.id, PacketType.SERVER_INFO)
+
+        println(msg)
     }
 
-    internal fun handleWhisper(packet: Packet) {
-        val body = packet.getBodyAsString()
-        val parts = body.split(" ", limit = 2)
-        val targetName = parts[0]
-        val message = parts[1]
-
+    internal fun handleWhisper(dto: WhisperDTO) {
         val targetHandler = clientMapLock.withLock {
-            clients.values.firstOrNull { it.clientData.name == targetName }
+            clients.values.firstOrNull { it.clientData.name == dto.target }
         }
 
         if (targetHandler == null) {
-            sendPacket(createPacket(PacketType.USER_NOT_EXISTS, "User '$targetName' does not exist."))
+            sendPacket(createPacket(PacketType.USER_NOT_EXISTS, ServerInfoDTO("User '${dto.target}' does not exist.")))
             return
         }
 
-        val msgToTarget = "[${clientData.name} -> ${targetHandler.clientData.name}] $message"
-        val msgToSender = "[You -> ${targetHandler.clientData.name}] $message"
+        val msgToTarget = "[${clientData.name} -> ${targetHandler.clientData.name}] ${dto.message}"
+        val msgToSender = "[You -> ${targetHandler.clientData.name}] ${dto.message}"
 
-        targetHandler.sendPacket(createPacket(PacketType.WHISPER, msgToTarget))
+        targetHandler.sendPacket(createPacket(PacketType.WHISPER, WhisperDTO(dto.target, msgToTarget)))
         targetHandler.clientData.receivedCount.incrementAndGet()
 
-        sendPacket(createPacket(PacketType.WHISPER, msgToSender))
+        sendPacket(createPacket(PacketType.WHISPER, WhisperDTO(dto.target, msgToSender)))
+        clientData.sentCount.incrementAndGet()
     }
 
     // 클라이언트 제거 및 disconnect 통지
@@ -222,12 +222,12 @@ class ClientHandler(
             clients.remove(clientId)
         }
 
-        val disconnectedMessage = "$name disconnected. (Send: $sent, Received: $received)"
-        val disconnectedPacket = createPacket(PacketType.DISCONNECT_INFO, disconnectedMessage)
+        val msg = "$name disconnected. (Send: $sent, Received: $received)"
+        val packet = createPacket(PacketType.DISCONNECT_INFO, ServerInfoDTO(msg))
 
-        sendPacket(disconnectedPacket)
-        broadcast(disconnectedPacket, clientData.id, PacketType.DISCONNECT_INFO)
-        println(disconnectedMessage)
+        sendPacket(packet)
+        broadcast(packet, clientData.id, PacketType.DISCONNECT_INFO)
+        println(msg)
 
         conn.close()
     }

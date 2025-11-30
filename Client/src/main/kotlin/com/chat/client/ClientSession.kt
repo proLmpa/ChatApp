@@ -1,9 +1,14 @@
 package com.chat.client
 
+import com.chat.share.ChatMessageDTO
 import com.chat.share.ConnectionService
 import com.chat.share.Packet
 import com.chat.share.PacketType
 import com.chat.share.Protocol.createPacket
+import com.chat.share.RegisterNameDTO
+import com.chat.share.ServerInfoDTO
+import com.chat.share.UpdateNameDTO
+import com.chat.share.WhisperDTO
 import java.io.IOException
 import kotlin.concurrent.thread
 
@@ -17,7 +22,7 @@ data class ClientState (@Volatile var isRegistered: Boolean = false)
 class ClientSession(
     private val conn: ConnectionService
 ) {
-    private val shutdownFlag = ShutdownFlag(false)
+    internal val shutdownFlag = ShutdownFlag(false)
     private val clientState = ClientState(false)
 
     fun start() {
@@ -26,20 +31,16 @@ class ClientSession(
         }
 
         sendMessageLoop()
-
         receiveThread.join()
     }
 
     /**
      * 패킷을 생성하고 서버로 전송하는 함수.
      * @param type 패킷 유형 (예: CHAT_MESSAGE, REGISTER_NAME)
-     * @param data 패킷 바디에 포함할 문자열 데이터
+     * @param dto Server, Client 요청에 따라 정해진 JSON format
      */
-    fun sendPacket(
-        type: PacketType,
-        data: String
-    ) {
-        val bytes = createPacket(type, data)
+    internal inline fun <reified T> sendPacket(type: PacketType, dto: T) {
+        val bytes = createPacket(type, dto)
 
         try {
             conn.writePacket(bytes)
@@ -66,28 +67,46 @@ class ClientSession(
     }
 
     private fun handlePacket(packet: Packet) {
-        val message = packet.getBodyAsString()
-
         when (packet.type) {
-            PacketType.SERVER_INFO -> println("Info: $message")
-            PacketType.INITIAL_NAME_CHANGE_FAILED -> {
-                println("Warning: $message")
-                clientState.isRegistered = false
-                println("Please enter another name")
+            PacketType.SERVER_INFO -> {
+                val dto = packet.toDTO<ServerInfoDTO>()
+                println("Info: ${dto.message}")
             }
             PacketType.SERVER_SUCCESS -> {
-                println("Success: $message")
+                val dto = packet.toDTO<ServerInfoDTO>()
+                println("Success: ${dto.message}")
+                println("You can now chat. (type '/n <name>' to rename, '/w <user> <msg>' to whisper, and 'exit' to quit)")
+
                 clientState.isRegistered = true
-                println("You can now chat. (type '/n <name>' to rename, 'exit' to quit)")
+            }
+            PacketType.INITIAL_NAME_CHANGE_FAILED -> {
+                val dto = packet.toDTO<ServerInfoDTO>()
+                println("Warning: ${dto.message}")
+                println("Please enter another name")
+
+//                clientState.isRegistered = false
             }
             PacketType.UPDATE_NAME_FAILED -> {
-                println("Warning: $message")
+                val dto = packet.toDTO<ServerInfoDTO>()
+                println("Warning: ${dto.message}")
                 println("Try another name with /n <new_name>")
             }
-            PacketType.CHAT_MESSAGE -> println(message)
-            PacketType.USER_NOT_EXISTS -> println("Info: $message")
-            PacketType.WHISPER -> println(message)
-            PacketType.DISCONNECT_INFO -> println("Disconnect: $message")
+            PacketType.USER_NOT_EXISTS -> {
+                val dto = packet.toDTO<ServerInfoDTO>()
+                println("Info: ${dto.message}")
+            }
+            PacketType.CHAT_MESSAGE -> {
+                val dto = packet.toDTO<ChatMessageDTO>()
+                println(dto.message)
+            }
+            PacketType.WHISPER -> {
+                val dto = packet.toDTO<WhisperDTO>()
+                println(dto.message)
+            }
+            PacketType.DISCONNECT_INFO -> {
+                val dto = packet.toDTO<ServerInfoDTO>()
+                println("Disconnect: ${dto.message}")
+            }
             else -> {}
         }
     }
@@ -96,25 +115,24 @@ class ClientSession(
         while (true) {
             val input = readlnOrNull()?.trim() ?: continue
 
-
             if (input.equals("exit", ignoreCase = true)) {
-                sendPacket(PacketType.DISCONNECT_REQUEST, "")
+                sendPacket(PacketType.DISCONNECT_REQUEST, ServerInfoDTO(""))
                 shutdownFlag.isIntentional = true
                 break
             }
 
             if (!clientState.isRegistered) {
-                val trimmed = input.trim()
-                if (trimmed.isEmpty()) {
+                val name = input.trim()
+                if (name.isEmpty()) {
                     println("Name cannot be empty.")
                     continue
                 }
-                if (trimmed.contains(" ")) {
+                if (name.contains(" ")) {
                     println("Name cannot contain spaces.")
                     continue
                 }
 
-                sendPacket(PacketType.REGISTER_NAME, trimmed)
+                sendPacket(PacketType.REGISTER_NAME, RegisterNameDTO(name))
                 continue
             }
 
@@ -129,7 +147,7 @@ class ClientSession(
                     continue
                 }
 
-                sendPacket(PacketType.UPDATE_NAME, name)
+                sendPacket(PacketType.UPDATE_NAME, UpdateNameDTO(name))
                 continue
             }
 
@@ -142,21 +160,15 @@ class ClientSession(
                     continue
                 }
 
-                val target = parts[0].trim()
-                val message = parts[1].trim()
-
-                if (target.isEmpty() || message.isEmpty()) {
-                    println("Usage: /w <user_name> <chat>")
-                    continue
-                }
-
-                val payload = "$target $message"
-                sendPacket(PacketType.WHISPER, payload)
+                sendPacket(
+                    PacketType.WHISPER,
+                    WhisperDTO(parts[0], parts[1])
+                )
                 continue
             }
 
             if (input.isNotBlank()) {
-                sendPacket(PacketType.CHAT_MESSAGE, input)
+                sendPacket(PacketType.CHAT_MESSAGE, ChatMessageDTO(input))
             }
         }
     }

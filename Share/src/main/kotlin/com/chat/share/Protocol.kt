@@ -1,7 +1,7 @@
 package com.chat.share
 
 import java.io.*
-import java.nio.charset.StandardCharsets
+import java.nio.ByteBuffer
 
 /**
  * 패킷의 종류를 정의하는 상수 객체입니다.
@@ -10,20 +10,61 @@ import java.nio.charset.StandardCharsets
 enum class PacketType(val code: Int) {
     REGISTER_NAME(10),
     CHAT_MESSAGE(20),
+
     SERVER_INFO(30),
     SERVER_SUCCESS(31),
     INITIAL_NAME_CHANGE_FAILED(32),
     UPDATE_NAME(33),
     UPDATE_NAME_FAILED(34),
+
     DISCONNECT_INFO(40),
     DISCONNECT_REQUEST(41),
+
     WHISPER(50),
     USER_NOT_EXISTS(51),
-    FILE_TRANSFER(60);
+
+    FILE_UPLOAD_REQUEST(60),
+    FILE_UPLOAD_ACCEPT(61),
+    FILE_UPLOAD_COMPLETE(62),
+
+    FILE_DOWNLOAD_REQUEST(63),
+    FILE_DOWNLOAD_ACCEPT(64),
+    FILE_DOWNLOAD_CHUNK(65),
+    FILE_DOWNLOAD_COMPLETE(66),
+    FILE_ERROR(67);
 
     companion object {
-        fun fromCode(code: Int): PacketType? =
-            entries.find { it.code == code }
+        private val map: Map<Int, PacketType> =
+            entries.associateBy { it.code }
+
+        fun fromCode(code: Int): PacketType? = map[code]
+    }
+}
+
+data class ServerInfoDTO(val message: String)
+data class RegisterNameDTO(val name: String)
+data class UpdateNameDTO(val newName: String)
+data class ChatMessageDTO(val message: String)
+data class WhisperDTO(val target: String, val message: String)
+data class FileUploadRequestDTO(val filename: String, val size: Long)
+
+data class FileChunkDTO(val index: Int, val data: ByteArray) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as FileChunkDTO
+
+        if (index != other.index) return false
+        if (!data.contentEquals(other.data)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = index
+        result = 31 * result + data.contentHashCode()
+        return result
     }
 }
 
@@ -35,11 +76,11 @@ enum class PacketType(val code: Int) {
  */
 data class Packet (
     val length : Int,
-    val type : PacketType?,
+    val type : PacketType,
     val body : ByteArray
 ) {
-    fun getBodyAsString(): String {
-        return String(body, StandardCharsets.UTF_8)
+    inline fun <reified T> toDTO(): T {
+        return JsonUtil.deserializeFromJsonBytes<T>(body)
     }
 
     override fun equals(other: Any?): Boolean {
@@ -70,21 +111,15 @@ object Protocol {
      * @param data 패킷 바디로 직렬화할 객체 (ex: data class)
      */
     inline fun <reified T> createPacket(type: PacketType, data: T): ByteArray {
-        val bodyBytes = when(data) {
-            is String -> data.toByteArray(StandardCharsets.UTF_8)
-            else -> JsonUtil.toJsonBytes(data)
-        }
+        val bodyBytes = JsonUtil.serializeToJsonBytes(data)
         val length = 8 + bodyBytes.size
 
-        val baos = ByteArrayOutputStream()
-        val dos = DataOutputStream(baos)
+        val buffer = ByteBuffer.allocate(length)
+        buffer.putInt(length)
+        buffer.putInt(type.code)
+        buffer.put(bodyBytes)
 
-        dos.writeInt(length)
-        dos.writeInt(type.code)
-        dos.write(bodyBytes)
-        dos.flush()
-
-        return baos.toByteArray()
+        return buffer.array()
     }
 
     /**
