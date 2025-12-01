@@ -20,10 +20,11 @@ data class ShutdownFlag (var isIntentional: Boolean = false)
 data class ClientState (@Volatile var isRegistered: Boolean = false)
 
 class ClientSession(
-    private val conn: ConnectionService
+    private val conn: ConnectionService,
+    private val inputProvider: () -> String? = { readlnOrNull() } // 기본은 콘솔 입력
 ) {
     internal val shutdownFlag = ShutdownFlag(false)
-    private val clientState = ClientState(false)
+    internal val clientState = ClientState(false)
 
     fun start() {
         val receiveThread = thread(isDaemon = true) {
@@ -49,7 +50,7 @@ class ClientSession(
         }
     }
 
-    fun receivePacket() {
+    private fun receivePacket() {
         try {
             while (conn.isConnected() && !shutdownFlag.isIntentional) {
                     val packet = conn.readPacket()
@@ -83,8 +84,6 @@ class ClientSession(
                 val dto = packet.toDTO<ServerInfoDTO>()
                 println("Warning: ${dto.message}")
                 println("Please enter another name")
-
-//                clientState.isRegistered = false
             }
             PacketType.UPDATE_NAME_FAILED -> {
                 val dto = packet.toDTO<ServerInfoDTO>()
@@ -111,9 +110,10 @@ class ClientSession(
         }
     }
 
-    fun sendMessageLoop() {
+    internal fun sendMessageLoop() {
         while (true) {
-            val input = readlnOrNull()?.trim() ?: continue
+            val raw = inputProvider() ?: continue
+            val input = raw.trim()
 
             if (handleExit(input)) break
             if (handleInitialRegister(input)) continue
@@ -123,14 +123,15 @@ class ClientSession(
         }
     }
 
-    internal fun handleExit(input: String): Boolean {
+    private fun handleExit(input: String): Boolean {
         if (!input.equals("exit", ignoreCase = true)) return false
 
         sendPacket(PacketType.DISCONNECT_REQUEST, ServerInfoDTO(""))
         shutdownFlag.isIntentional = true
         return true
     }
-    internal fun handleInitialRegister(input: String): Boolean {
+
+    private fun handleInitialRegister(input: String): Boolean {
         if (clientState.isRegistered) return false
 
         val name = input.trim()
@@ -148,7 +149,7 @@ class ClientSession(
         return true
     }
 
-    internal fun handleNameChange(input: String): Boolean {
+    private fun handleNameChange(input: String): Boolean {
         if (!input.startsWith("/n ")) return false
 
         val name = input.removePrefix("/n ").trim()
@@ -167,7 +168,7 @@ class ClientSession(
         return true
     }
 
-    internal fun handleWhisper(input: String): Boolean {
+    private fun handleWhisper(input: String): Boolean {
         if (!input.startsWith("/w ")) return false
 
         val args = input.removePrefix("/w ").trim()

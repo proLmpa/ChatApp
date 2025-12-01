@@ -139,7 +139,7 @@ class ClientHandler(
         val sender = clientData.name ?: clientId
         val chatMessage = "[$sender] ${dto.message}"
 
-        broadcast(createPacket(PacketType.CHAT_MESSAGE, dto), clientData.id, PacketType.CHAT_MESSAGE)
+        broadcast(createPacket(PacketType.CHAT_MESSAGE, ChatMessageDTO(chatMessage)), clientData.id, PacketType.CHAT_MESSAGE)
         println(chatMessage)
 
         clientData.sentCount.incrementAndGet()

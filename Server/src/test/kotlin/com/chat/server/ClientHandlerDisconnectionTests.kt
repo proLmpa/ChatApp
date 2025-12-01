@@ -14,7 +14,7 @@ class ClientHandlerDisconnectionTests : ClientHandlerBaseTest() {
     @Test
     fun `when DISCONNECT_REQUEST received then quit connection`() {
         // Given
-        val packet = packet(PacketType.DISCONNECT_REQUEST, "")
+        val packet = disconnectPacket()
 
         whenever(conn.readPacket())
             .thenReturn(packet)

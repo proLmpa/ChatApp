@@ -17,7 +17,7 @@ class ClientHandlerNameTests : ClientHandlerBaseTest() {
     fun `when REGISTER_NAME received then register name`() {
         // Given
         val name = "Alice"
-        val packet = packet(PacketType.REGISTER_NAME, name)
+        val packet = registerNamePacket(name)
 
         whenever(conn.readPacket())
             .thenReturn(packet)
@@ -44,7 +44,7 @@ class ClientHandlerNameTests : ClientHandlerBaseTest() {
         handler.clientData.name = "Alice"
 
         addClient("client2", "Alice")
-        val packet = packet(PacketType.REGISTER_NAME, "Alice")
+        val packet = registerNamePacket("Alice")
 
         whenever(conn.readPacket())
             .thenReturn(packet)
@@ -69,7 +69,7 @@ class ClientHandlerNameTests : ClientHandlerBaseTest() {
         handler.clientData.name = "Alice"
 
         val newName = "Alice2"
-        val packet = packet(PacketType.UPDATE_NAME, newName)
+        val packet = updateNamePacket(newName)
 
         whenever(conn.readPacket())
             .thenReturn(packet)
@@ -94,7 +94,7 @@ class ClientHandlerNameTests : ClientHandlerBaseTest() {
         handler.clientData.name = "Alice"
 
         addClient("client2", "Bob")
-        val packet = packet(PacketType.UPDATE_NAME, "Bob")
+        val packet = updateNamePacket("Bob")
 
         whenever(conn.readPacket())
             .thenReturn(packet)
