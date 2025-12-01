@@ -115,61 +115,85 @@ class ClientSession(
         while (true) {
             val input = readlnOrNull()?.trim() ?: continue
 
-            if (input.equals("exit", ignoreCase = true)) {
-                sendPacket(PacketType.DISCONNECT_REQUEST, ServerInfoDTO(""))
-                shutdownFlag.isIntentional = true
-                break
-            }
-
-            if (!clientState.isRegistered) {
-                val name = input.trim()
-                if (name.isEmpty()) {
-                    println("Name cannot be empty.")
-                    continue
-                }
-                if (name.contains(" ")) {
-                    println("Name cannot contain spaces.")
-                    continue
-                }
-
-                sendPacket(PacketType.REGISTER_NAME, RegisterNameDTO(name))
-                continue
-            }
-
-            if (input.startsWith("/n ")) {
-                val name = input.removePrefix("/n ").trim()
-                if (name.isEmpty()) {
-                    println("Usage: /n <new_name>")
-                    continue
-                }
-                if (name.contains(" ")) {
-                    println("Name cannot contain spaces.")
-                    continue
-                }
-
-                sendPacket(PacketType.UPDATE_NAME, UpdateNameDTO(name))
-                continue
-            }
-
-            if (input.startsWith("/w ")) {
-                val args = input.removePrefix("/w ").trim()
-                val parts = args.split(" ", limit=2)
-
-                if (parts.size < 2) {
-                    println("Usage: /w <user_name> <chat>")
-                    continue
-                }
-
-                sendPacket(
-                    PacketType.WHISPER,
-                    WhisperDTO(parts[0], parts[1])
-                )
-                continue
-            }
-
-            if (input.isNotBlank()) {
-                sendPacket(PacketType.CHAT_MESSAGE, ChatMessageDTO(input))
-            }
+            if (handleExit(input)) break
+            if (handleInitialRegister(input)) continue
+            if (handleNameChange(input)) continue
+            if (handleWhisper(input)) continue
+            if (handleChat(input)) continue
         }
+    }
+
+    internal fun handleExit(input: String): Boolean {
+        if (!input.equals("exit", ignoreCase = true)) return false
+
+        sendPacket(PacketType.DISCONNECT_REQUEST, ServerInfoDTO(""))
+        shutdownFlag.isIntentional = true
+        return true
+    }
+    internal fun handleInitialRegister(input: String): Boolean {
+        if (clientState.isRegistered) return false
+
+        val name = input.trim()
+        if (name.isEmpty()) {
+            println("Name cannot be empty.")
+            return true
+        }
+
+        if (name.contains(" ")) {
+            println("Name cannot contain spaces.")
+            return true
+        }
+
+        sendPacket(PacketType.REGISTER_NAME, RegisterNameDTO(name))
+        return true
+    }
+
+    internal fun handleNameChange(input: String): Boolean {
+        if (!input.startsWith("/n ")) return false
+
+        val name = input.removePrefix("/n ").trim()
+
+        if (name.isEmpty()) {
+            println("Usage: /n <new_name>")
+            return true
+        }
+
+        if (name.contains(" ")) {
+            println("Name cannot contain spaces.")
+            return true
+        }
+
+        sendPacket(PacketType.UPDATE_NAME, UpdateNameDTO(name))
+        return true
+    }
+
+    internal fun handleWhisper(input: String): Boolean {
+        if (!input.startsWith("/w ")) return false
+
+        val args = input.removePrefix("/w ").trim()
+        val parts = args.split(" ", limit = 2)
+
+        if (parts.size < 2) {
+            println("Usage: /w <user_name> <chat>")
+            return true
+        }
+
+        val target = parts[0].trim()
+        val message = parts[1].trim()
+
+        if (target.isEmpty() || message.isEmpty()) {
+            println("Usage: /w <user_name> <chat>")
+            return true
+        }
+
+        sendPacket(PacketType.WHISPER, WhisperDTO(target, message))
+        return true
+    }
+
+    internal fun handleChat(input: String): Boolean {
+        if (input.isBlank()) return false
+
+        sendPacket(PacketType.CHAT_MESSAGE, ChatMessageDTO(input))
+        return true
     }
 }
