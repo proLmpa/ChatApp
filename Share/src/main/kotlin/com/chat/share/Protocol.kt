@@ -8,25 +8,30 @@ import java.nio.ByteBuffer
  * 클라이언트와 서버가 패킷의 용도를 식별하는 데 사용됩니다.
  */
 enum class PacketType(val code: Int) {
+    CONNECT_SUCCESS(1),
     REGISTER_NAME(10),
+    REGISTER_NAME_SUCCESS(11),
+    NAME_CANNOT_BE_BLANK(12),
+    NAME_CANNOT_BE_DUPLICATED(13),
+    USER_ENTERED(19),
+
     CHAT_MESSAGE(20),
 
     SERVER_INFO(30),
-    SERVER_SUCCESS(31),
-    INITIAL_NAME_CHANGE_FAILED(32),
     UPDATE_NAME(33),
-    UPDATE_NAME_FAILED(34),
+    UPDATE_NAME_SUCCESS(34),
 
     DISCONNECT_INFO(40),
     DISCONNECT_REQUEST(41),
 
     WHISPER(50),
     USER_NOT_EXISTS(51),
+    WHISPER_TO_SENDER(52),
+    WHISPER_TO_TARGET(53),
 
     FILE_UPLOAD_REQUEST(60),
     FILE_UPLOAD_ACCEPT(61),
     FILE_UPLOAD_COMPLETE(62),
-
     FILE_DOWNLOAD_REQUEST(63),
     FILE_DOWNLOAD_ACCEPT(64),
     FILE_DOWNLOAD_CHUNK(65),
@@ -43,9 +48,12 @@ enum class PacketType(val code: Int) {
 
 data class ServerInfoDTO(val message: String)
 data class RegisterNameDTO(val name: String)
+data class NameRegisteredDTO(val id: String, val name: String)
 data class UpdateNameDTO(val newName: String)
-data class ChatMessageDTO(val message: String)
-data class WhisperDTO(val target: String, val message: String)
+data class NameUpdatedDTO (val oldName: String?, val newName: String)
+data class ChatMessageDTO(val sender: String?, val message: String)
+data class WhisperDTO(val sender: String, val target: String, val message: String)
+data class DisconnectDTO(val target: String, val sent: Int, val received: Int)
 data class FileUploadRequestDTO(val filename: String, val size: Long)
 
 data class FileChunkDTO(val index: Int, val data: ByteArray) {

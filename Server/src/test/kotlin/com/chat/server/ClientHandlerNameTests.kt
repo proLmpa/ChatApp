@@ -59,7 +59,7 @@ class ClientHandlerNameTests : ClientHandlerBaseTest() {
 
         // Then
         verify(handler, times(1)).sendPacket(
-            argThat { Protocol.readPacket(this.inputStream()).type == PacketType.INITIAL_NAME_CHANGE_FAILED}
+            argThat { Protocol.readPacket(this.inputStream()).type == PacketType.NAME_CANNOT_BE_DUPLICATED }
         )
     }
 
@@ -109,7 +109,7 @@ class ClientHandlerNameTests : ClientHandlerBaseTest() {
 
         // Then
         verify(handler, times(1)).sendPacket(
-            argThat { Protocol.readPacket(this.inputStream()).type == PacketType.UPDATE_NAME_FAILED }
+            argThat { Protocol.readPacket(this.inputStream()).type == PacketType.NAME_CANNOT_BE_DUPLICATED }
         )
     }
 }

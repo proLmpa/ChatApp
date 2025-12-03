@@ -17,7 +17,7 @@ class ClientHandlerMessageTests : ClientHandlerBaseTest() {
         // Given
         handler.clientData.name = "Alice"
 
-        val packet = chatMessagePacket("Hello, world!")
+        val packet = chatMessagePacket(handler.clientData.name!!, "Hello, world!")
 
         whenever(conn.readPacket())
             .thenReturn(packet)
@@ -49,7 +49,7 @@ class ClientHandlerMessageTests : ClientHandlerBaseTest() {
         handler.clientData.name = "Alice"
 
         addClient("client2", "Bob")
-        val packet = whisperPacket("Bob", "Bob Hi, Bob")
+        val packet = whisperPacket(handler.clientData.name!!, "Bob", "Bob Hi, Bob")
 
         whenever(conn.readPacket())
             .thenReturn(packet)
@@ -72,7 +72,7 @@ class ClientHandlerMessageTests : ClientHandlerBaseTest() {
     @Test
     fun `when WHISPER_MESSAGE received and USER_NOT_EXISTS then send failed`() {
         // Given
-        val packet = whisperPacket("Ghost","Ghost hi")
+        val packet = whisperPacket("Ghost1", "Ghost2","Ghost hi")
 
         whenever(conn.readPacket())
             .thenReturn(packet)

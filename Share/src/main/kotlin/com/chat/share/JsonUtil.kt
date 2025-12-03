@@ -8,7 +8,6 @@ import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 
 object JsonUtil {
     val mapper = JsonMapper.builder()
-        .findAndAddModules()    // kotlin-module, java-time-module 등 자동 등록
         .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
         .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)

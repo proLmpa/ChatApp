@@ -42,11 +42,11 @@ open class ClientHandlerBaseTest {
     protected fun updateNamePacket(newName: String): Packet =
         packet(PacketType.UPDATE_NAME, UpdateNameDTO(newName))
 
-    protected fun chatMessagePacket(message: String): Packet =
-        packet(PacketType.CHAT_MESSAGE, ChatMessageDTO(message))
+    protected fun chatMessagePacket(sender: String, message: String): Packet =
+        packet(PacketType.CHAT_MESSAGE, ChatMessageDTO(sender, message))
 
-    protected fun whisperPacket(target: String, message: String): Packet =
-        packet(PacketType.WHISPER, WhisperDTO(target, message))
+    protected fun whisperPacket(sender: String, target: String, message: String): Packet =
+        packet(PacketType.WHISPER, WhisperDTO(sender, target, message))
 
     protected fun disconnectPacket(): Packet =
         packet(PacketType.DISCONNECT_REQUEST, ServerInfoDTO(""))

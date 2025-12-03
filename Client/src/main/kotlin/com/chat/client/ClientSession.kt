@@ -2,6 +2,9 @@ package com.chat.client
 
 import com.chat.share.ChatMessageDTO
 import com.chat.share.ConnectionService
+import com.chat.share.DisconnectDTO
+import com.chat.share.NameRegisteredDTO
+import com.chat.share.NameUpdatedDTO
 import com.chat.share.Packet
 import com.chat.share.PacketType
 import com.chat.share.Protocol.createPacket
@@ -13,10 +16,6 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import kotlin.concurrent.thread
 
-/**
- * 클라이언트의 의도적 종료(graceful shutdown) 상태를 스레드 간에 공유하기 위한 플래그.
- * 메인 스레드(송신 루프)가 'exit'을 입력했을 때, 수신 스레드가 이를 정상 종료로 인식하게 돕습니다.
- */
 data class ShutdownFlag (var isIntentional: Boolean = false)
 data class ClientState (@Volatile var isRegistered: Boolean = false)
 
@@ -81,41 +80,51 @@ class ClientSession(
 
     private fun handlePacket(packet: Packet) {
         when (packet.type) {
-            PacketType.SERVER_INFO -> {
-                val dto = packet.toDTO<ServerInfoDTO>()
-                println("Info: ${dto.message}")
+            PacketType.CONNECT_SUCCESS -> {
+                println("Please register your name.")
             }
-            PacketType.SERVER_SUCCESS -> {
-                val dto = packet.toDTO<ServerInfoDTO>()
-                println("Success: ${dto.message}")
+            PacketType.REGISTER_NAME_SUCCESS -> {
+                val dto = packet.toDTO<NameRegisteredDTO>()
+                println("Welcome, ${dto.name}")
                 println("You can now chat. (type '/n <name>' to rename, '/w <user> <msg>' to whisper, and 'exit' to quit)")
                 clientState.isRegistered = true
             }
-            PacketType.INITIAL_NAME_CHANGE_FAILED -> {
-                val dto = packet.toDTO<ServerInfoDTO>()
-                println("Warning: ${dto.message}")
-                println("Please enter another name")
+            PacketType.USER_ENTERED -> {
+                val dto = packet.toDTO<NameRegisteredDTO>()
+                println("Info: ${dto.name} entered.")
             }
-            PacketType.UPDATE_NAME_FAILED -> {
-                val dto = packet.toDTO<ServerInfoDTO>()
-                println("Warning: ${dto.message}")
-                println("Try another name with /n <new_name>")
+            PacketType.UPDATE_NAME_SUCCESS -> {
+                val dto = packet.toDTO<NameUpdatedDTO>()
+                println("Info: '${dto.oldName}' updated to '${dto.newName}'.")
+            }
+            PacketType.NAME_CANNOT_BE_BLANK -> {
+                println("Warn: Name cannot be blank.")
+            }
+            PacketType.NAME_CANNOT_BE_DUPLICATED -> {
+                println("Warn: This name already exists. Name cannot be duplicated.")
             }
             PacketType.USER_NOT_EXISTS -> {
+                println("Info: Target user doesn't exist.")
+            }
+            PacketType.SERVER_INFO -> {
                 val dto = packet.toDTO<ServerInfoDTO>()
                 println("Info: ${dto.message}")
             }
             PacketType.CHAT_MESSAGE -> {
                 val dto = packet.toDTO<ChatMessageDTO>()
-                println(dto.message)
+                println("[${dto.sender}] ${dto.message}")
             }
-            PacketType.WHISPER -> {
+            PacketType.WHISPER_TO_SENDER -> {
                 val dto = packet.toDTO<WhisperDTO>()
-                println(dto.message)
+                println("[You -> ${dto.target}] ${dto.message}")
+            }
+            PacketType.WHISPER_TO_TARGET -> {
+                val dto = packet.toDTO<WhisperDTO>()
+                println("[${dto.sender} -> You] ${dto.message}")
             }
             PacketType.DISCONNECT_INFO -> {
-                val dto = packet.toDTO<ServerInfoDTO>()
-                println("Disconnect: ${dto.message}")
+                val dto = packet.toDTO<DisconnectDTO>()
+                println("Info: User '${dto.target}' disconnected. (Send: ${dto.sent}, Received: ${dto.received})")
             }
             else -> logger.warn { "Unknown packet type: ${packet.type}" }
         }
@@ -202,7 +211,7 @@ class ClientSession(
         }
 
         logger.info { "Sending WHISPER to=$target msg=$message" }
-        sendPacket(PacketType.WHISPER, WhisperDTO(target, message))
+        sendPacket(PacketType.WHISPER, WhisperDTO("", target, message))
         return true
     }
 
@@ -210,7 +219,7 @@ class ClientSession(
         if (input.isBlank()) return false
 
         logger.debug { "Sending CHAT MESSAGE: $input" }
-        sendPacket(PacketType.CHAT_MESSAGE, ChatMessageDTO(input))
+        sendPacket(PacketType.CHAT_MESSAGE, ChatMessageDTO("", input))
         return true
     }
 }
