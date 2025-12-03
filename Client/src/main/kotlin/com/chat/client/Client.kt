@@ -1,8 +1,11 @@
 package com.chat.client
 
 import com.chat.share.ConnectionService
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import java.net.Socket
+
+private val logger = KotlinLogging.logger {}
 
 fun main() {
     val server = "localhost"
@@ -10,10 +13,10 @@ fun main() {
 
     val socket = try {
         val s = Socket(server, port)
-        println("Connected to server at $server:$port")
+        logger.info { "Connected to server at $server:$port" }
         s
     } catch (e: IOException) {
-        println("Error: Couldn't connect to server: ${e.message}")
+        logger.error(e) { "Error: Couldn't connect to server: ${e.message}" }
     } as Socket?
 
     if (socket != null) {
@@ -22,7 +25,7 @@ fun main() {
 
         session.start()
     } else {
-        println("Error: Couldn't start server at $server:$port")
+        logger.info { "Client crashed on startup: Couldn't start server at $server:$port"}
         return
     }
 }

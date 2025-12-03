@@ -9,6 +9,7 @@ import com.chat.share.RegisterNameDTO
 import com.chat.share.ServerInfoDTO
 import com.chat.share.UpdateNameDTO
 import com.chat.share.WhisperDTO
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import kotlin.concurrent.thread
 
@@ -23,16 +24,22 @@ class ClientSession(
     private val conn: ConnectionService,
     private val inputProvider: () -> String? = { readlnOrNull() } // 기본은 콘솔 입력
 ) {
+    private val logger = KotlinLogging.logger {}
+
     internal val shutdownFlag = ShutdownFlag(false)
     internal val clientState = ClientState(false)
 
     fun start() {
-        val receiveThread = thread(isDaemon = true) {
+        logger.info { "Client session started. Launching receiver thread.."}
+
+        val receiveThread = thread(isDaemon = true, name = "client-receiver-thread") {
             receivePacket()
         }
 
         sendMessageLoop()
+
         receiveThread.join()
+        logger.info { "Client session finished" }
     }
 
     /**
@@ -42,28 +49,33 @@ class ClientSession(
      */
     internal inline fun <reified T> sendPacket(type: PacketType, dto: T) {
         val bytes = createPacket(type, dto)
+        logger.debug { "Sending packet type=$type body=$dto"}
 
         try {
             conn.writePacket(bytes)
         } catch (e: IOException) {
             println("Error: Failed to send packet: ${e.message}")
+            logger.error(e) { "Failed to send packet type=$type" }
         }
     }
 
     private fun receivePacket() {
         try {
             while (conn.isConnected() && !shutdownFlag.isIntentional) {
-                    val packet = conn.readPacket()
-                    handlePacket(packet)
+                val packet = conn.readPacket()
+                logger.debug { "Received packet: type=${packet.type}, length=${packet.length}" }
+                handlePacket(packet)
             }
         } catch (_: IOException) {
             if (shutdownFlag.isIntentional) {
                 println("Local shutdown complete.")
+                logger.info { "Client closed connection intentionally." }
             } else {
                 println("Error: Server disconnected.")
+                logger.warn { "Server disconnected unexpectedly." }
             }
         } catch (e: Exception) {
-            println("Received thread - Error: ${e.message}")
+            logger.error { "Received thread - Error: ${e.message}" }
         }
     }
 
@@ -77,7 +89,6 @@ class ClientSession(
                 val dto = packet.toDTO<ServerInfoDTO>()
                 println("Success: ${dto.message}")
                 println("You can now chat. (type '/n <name>' to rename, '/w <user> <msg>' to whisper, and 'exit' to quit)")
-
                 clientState.isRegistered = true
             }
             PacketType.INITIAL_NAME_CHANGE_FAILED -> {
@@ -106,7 +117,7 @@ class ClientSession(
                 val dto = packet.toDTO<ServerInfoDTO>()
                 println("Disconnect: ${dto.message}")
             }
-            else -> {}
+            else -> logger.warn { "Unknown packet type: ${packet.type}" }
         }
     }
 
@@ -126,6 +137,7 @@ class ClientSession(
     private fun handleExit(input: String): Boolean {
         if (!input.equals("exit", ignoreCase = true)) return false
 
+        logger.info { "User entered exit command. Sending DISCONNECT_REQUEST." }
         sendPacket(PacketType.DISCONNECT_REQUEST, ServerInfoDTO(""))
         shutdownFlag.isIntentional = true
         return true
@@ -145,6 +157,7 @@ class ClientSession(
             return true
         }
 
+        logger.info { "Sending REGISTER_NAME: $name" }
         sendPacket(PacketType.REGISTER_NAME, RegisterNameDTO(name))
         return true
     }
@@ -164,6 +177,7 @@ class ClientSession(
             return true
         }
 
+        logger.info { "Sending UPDATE_NAME: $name" }
         sendPacket(PacketType.UPDATE_NAME, UpdateNameDTO(name))
         return true
     }
@@ -187,6 +201,7 @@ class ClientSession(
             return true
         }
 
+        logger.info { "Sending WHISPER to=$target msg=$message" }
         sendPacket(PacketType.WHISPER, WhisperDTO(target, message))
         return true
     }
@@ -194,6 +209,7 @@ class ClientSession(
     internal fun handleChat(input: String): Boolean {
         if (input.isBlank()) return false
 
+        logger.debug { "Sending CHAT MESSAGE: $input" }
         sendPacket(PacketType.CHAT_MESSAGE, ChatMessageDTO(input))
         return true
     }

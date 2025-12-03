@@ -37,6 +37,11 @@ subprojects {
 
         // final, static 클래스 mock 객체 생성을 위한 mockito-inline
         testImplementation("org.mockito:mockito-inline:5.2.0")
+
+        // Kotlin-logging
+        implementation("io.github.oshai:kotlin-logging-jvm:7.0.0")
+        implementation("org.slf4j:slf4j-api:2.0.16")
+        implementation("ch.qos.logback:logback-classic:1.5.11")
     }
 
     tasks.test {

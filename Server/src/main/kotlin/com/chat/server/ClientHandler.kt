@@ -8,6 +8,7 @@ import com.chat.share.RegisterNameDTO
 import com.chat.share.ServerInfoDTO
 import com.chat.share.UpdateNameDTO
 import com.chat.share.WhisperDTO
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
@@ -33,6 +34,8 @@ class ClientHandler(
     private val conn: ConnectionService,
     private val clientId: String
 ): Thread() {
+    private val logger = KotlinLogging.logger {}
+
     val clientData = ClientData(clientId)
     private val clientOutputLock = ReentrantLock()
 
@@ -46,7 +49,7 @@ class ClientHandler(
             try {
                 conn.writePacket(packetBytes)
             } catch (_: IOException) {
-                println("[Server] Error: Failed to send packet to ${clientData.name ?: clientId}.")
+                logger.error { "Failed to send packet to ${clientData.name ?: clientId}."}
                 conn.close()
             }
         }
@@ -79,14 +82,14 @@ class ClientHandler(
     override fun run() = try {
 
         clientMapLock.withLock { clients[clientId] = this }
+        logger.info { "Client [$clientId] connected (awaiting name)" }
 
-        println("Client temporary connection accepted: $clientId (waiting for name)")
         sendPacket(createPacket(PacketType.SERVER_INFO, ServerInfoDTO("Welcome! Please register your name.")))
 
         listenForMessages()
     } catch (_: Exception) {
         val clientNameOrId = clientData.name ?: clientId
-        println("Client $clientNameOrId disconnected.")
+        logger.error { "Client $clientNameOrId disconnected." }
     } finally {
         if (conn.isConnected()) {
             handleClientDisconnect()
@@ -97,6 +100,7 @@ class ClientHandler(
     internal fun listenForMessages() {
         while (conn.isConnected() && !conn.inputShutDown()) {
             val packet = conn.readPacket()
+            logger.debug { "Received packet: type=${packet.type}, length=${packet.length}" }
 
             when (packet.type) {
                 PacketType.REGISTER_NAME ->
@@ -111,7 +115,7 @@ class ClientHandler(
                     handleWhisper(packet.toDTO<WhisperDTO>())
                 }
                 PacketType.DISCONNECT_REQUEST -> {
-                    println("Client ${clientData.name ?: clientId} sent DISCONNECT_REQUEST.")
+                    logger.info { "Client ${clientData.name ?: clientId} sent DISCONNECT_REQUEST." }
                     return
                 }
 
@@ -128,11 +132,12 @@ class ClientHandler(
         if (handleNameDuplication(clientName, true)) return
 
         clientData.name = clientName
+        logger.info { "Client $clientId registered name: $clientName" }
 
-        val connectedMessage = "$clientName entered."
+        val connectedMessage = "User $clientName entered."
         sendPacket(createPacket(PacketType.SERVER_SUCCESS, ServerInfoDTO("Welcome, $clientName!")))
         broadcast(createPacket(PacketType.SERVER_INFO, ServerInfoDTO(connectedMessage)), clientData.id, PacketType.SERVER_INFO)
-        println(connectedMessage)
+        logger.info { connectedMessage }
     }
 
     internal fun handleChatMessage(dto: ChatMessageDTO) {
@@ -140,7 +145,7 @@ class ClientHandler(
         val chatMessage = "[$sender] ${dto.message}"
 
         broadcast(createPacket(PacketType.CHAT_MESSAGE, ChatMessageDTO(chatMessage)), clientData.id, PacketType.CHAT_MESSAGE)
-        println(chatMessage)
+        logger.info { chatMessage }
 
         clientData.sentCount.incrementAndGet()
     }
@@ -189,7 +194,7 @@ class ClientHandler(
         sendPacket(createPacket(PacketType.SERVER_SUCCESS, ServerInfoDTO(msg)))
         broadcast(createPacket(PacketType.SERVER_INFO, ServerInfoDTO(msg)), clientData.id, PacketType.SERVER_INFO)
 
-        println(msg)
+        logger.info { msg }
     }
 
     internal fun handleWhisper(dto: WhisperDTO) {
@@ -207,6 +212,7 @@ class ClientHandler(
 
         targetHandler.sendPacket(createPacket(PacketType.WHISPER, WhisperDTO(dto.target, msgToTarget)))
         targetHandler.clientData.receivedCount.incrementAndGet()
+        logger.info { msgToTarget }
 
         sendPacket(createPacket(PacketType.WHISPER, WhisperDTO(dto.target, msgToSender)))
         clientData.sentCount.incrementAndGet()
@@ -227,7 +233,7 @@ class ClientHandler(
 
         sendPacket(packet)
         broadcast(packet, clientData.id, PacketType.DISCONNECT_INFO)
-        println(msg)
+        logger.info { msg }
 
         conn.close()
     }
