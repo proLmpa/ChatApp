@@ -1,26 +1,61 @@
 package com.chat.share
 
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.EOFException
 import java.net.Socket
 
 class ConnectionService(
     private val socket: Socket
-) : Connection {
+) {
 
-    private val input = socket.getInputStream()
-    private val output = socket.getOutputStream()
+    private val input = DataInputStream(socket.getInputStream())
+    private val output = DataOutputStream(socket.getOutputStream())
 
-    override fun readPacket(): Packet =
+    fun readPacket(): Packet =
         Protocol.readPacket(input)
 
-    override fun writePacket(bytes: ByteArray) {
-        output.write(bytes)
-        output.flush()
+    fun writePacket(bytes: ByteArray) =
+        Protocol.writePacket(output, bytes)
+
+    fun readChunk(): FileChunk {
+        val length: Int
+        val buffer: ByteArray
+
+        synchronized(input) {
+            length = try {
+                input.readInt()
+            } catch (e: EOFException) {
+                throw e
+            }
+
+            if (length < 0) {
+                throw IllegalStateException("Negative chunk length: $length")
+            }
+
+            buffer = ByteArray(length)
+            input.readFully(buffer)
+        }
+
+        return FileChunk(length, buffer)
     }
 
-    override fun isConnected(): Boolean =
+    fun writeChunk(chunk: ByteArray, len: Int = chunk.size) {
+        require(len >= 0 && len <= chunk.size) {
+            "Invalid length $len for chunk size ${chunk.size}"
+        }
+
+        synchronized(output) {
+            output.writeInt(len)
+            output.write(chunk, 0, len)
+            output.flush()
+        }
+    }
+
+    fun isConnected(): Boolean =
         socket.isConnected && !socket.isClosed
 
-    override fun close() {
+    fun close() {
         socket.close()
     }
 

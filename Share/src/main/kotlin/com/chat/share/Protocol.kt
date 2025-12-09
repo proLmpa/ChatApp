@@ -29,14 +29,9 @@ enum class PacketType(val code: Int) {
     WHISPER_TO_SENDER(52),
     WHISPER_TO_TARGET(53),
 
-    FILE_UPLOAD_REQUEST(60),
-    FILE_UPLOAD_ACCEPT(61),
-    FILE_UPLOAD_COMPLETE(62),
-    FILE_DOWNLOAD_REQUEST(63),
-    FILE_DOWNLOAD_ACCEPT(64),
-    FILE_DOWNLOAD_CHUNK(65),
-    FILE_DOWNLOAD_COMPLETE(66),
-    FILE_ERROR(67);
+    FILE_SEND_REQUEST(60),
+    FILE_SEND_COMPLETE(61),
+    FILE_CHUNK(62);
 
     companion object {
         private val map: Map<Int, PacketType> =
@@ -54,27 +49,8 @@ data class NameUpdatedDTO (val oldName: String?, val newName: String)
 data class ChatMessageDTO(val sender: String?, val message: String)
 data class WhisperDTO(val sender: String, val target: String, val message: String)
 data class DisconnectDTO(val target: String, val sent: Int, val received: Int)
-data class FileUploadRequestDTO(val filename: String, val size: Long)
-
-data class FileChunkDTO(val index: Int, val data: ByteArray) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-
-        other as FileChunkDTO
-
-        if (index != other.index) return false
-        if (!data.contentEquals(other.data)) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = index
-        result = 31 * result + data.contentHashCode()
-        return result
-    }
-}
+data class FileSendRequestDTO(val target: String, val fileName: String, val fileSize: Long)
+data class FileSendCompleteDTO(val target: String)
 
 /**
  * 프로토콜에 정의된 기본 패킷 구조를 나타내는 데이터 클래스입니다.
@@ -130,25 +106,28 @@ object Protocol {
         return buffer.array()
     }
 
-    /**
-     * 입력 스트림에서 패킷을 읽어 Packet 객체로 변환합니다.
-     * @throws IOException EOF 또는 연결 종료 시
-     */
-    fun readPacket(inputStream: InputStream): Packet {
-        val dis = DataInputStream(inputStream)
-
+    fun readPacket(input: DataInputStream): Packet {
         val length = try {
-            dis.readInt()
+            input.readInt()
         } catch (_: Exception) {
             throw IOException("Connection closed by peer (EOF).")
         }
 
-        val type = PacketType.fromCode(dis.readInt())
-            ?: throw IOException("Unknown PacketType code")
+        val type = PacketType.fromCode(input.readInt())
+            ?: throw IOException("Connection closed while reading packet type.")
 
         val body = ByteArray(length - 8)
-        dis.readFully(body)
+        input.readFully(body)
 
         return Packet(length, type, body)
+    }
+
+    fun writePacket(output: DataOutputStream, bytes: ByteArray) {
+        try {
+            output.write(bytes)
+            output.flush()
+        } catch (e: Exception) {
+            throw IOException("Failed to write packet.")
+        }
     }
 }
