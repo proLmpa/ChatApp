@@ -49,8 +49,8 @@ data class NameUpdatedDTO (val oldName: String?, val newName: String)
 data class ChatMessageDTO(val sender: String?, val message: String)
 data class WhisperDTO(val sender: String, val target: String, val message: String)
 data class DisconnectDTO(val target: String, val sent: Int, val received: Int)
-data class FileSendRequestDTO(val target: String, val fileName: String, val fileSize: Long)
-data class FileSendCompleteDTO(val target: String)
+data class FileSendRequestDTO(val target: String, val transferId: String, val fileName: String, val fileSize: Long)
+data class FileSendCompleteDTO(val transferId: String)
 
 /**
  * 프로토콜에 정의된 기본 패킷 구조를 나타내는 데이터 클래스입니다.
@@ -94,40 +94,36 @@ object Protocol {
      * @param type 패킷 종류
      * @param data 패킷 바디로 직렬화할 객체 (ex: data class)
      */
-    inline fun <reified T> createPacket(type: PacketType, data: T): ByteArray {
+    inline fun <reified T> createPacket(type: PacketType, data: T): Packet {
         val bodyBytes = JsonUtil.serializeToJsonBytes(data)
         val length = 8 + bodyBytes.size
 
-        val buffer = ByteBuffer.allocate(length)
-        buffer.putInt(length)
-        buffer.putInt(type.code)
-        buffer.put(bodyBytes)
-
-        return buffer.array()
+        return Packet(length, type, bodyBytes)
     }
 
-    fun readPacket(input: DataInputStream): Packet {
-        val length = try {
-            input.readInt()
-        } catch (_: Exception) {
-            throw IOException("Connection closed by peer (EOF).")
-        }
+    // BytesArray(payload) to Packet
+    fun decodePacket(payload: ByteArray): Packet {
+        val dis = DataInputStream(ByteArrayInputStream(payload))
 
-        val type = PacketType.fromCode(input.readInt())
-            ?: throw IOException("Connection closed while reading packet type.")
+        val length = dis.readInt()
+        val typeCode = dis.readInt()
+        val type = PacketType.fromCode(typeCode)
+            ?: throw IOException("Unknown PacketType: $typeCode")
 
-        val body = ByteArray(length - 8)
-        input.readFully(body)
+        val bodySize = length-8
+        val body = ByteArray(bodySize)
+        dis.readFully(body)
 
         return Packet(length, type, body)
     }
 
-    fun writePacket(output: DataOutputStream, bytes: ByteArray) {
-        try {
-            output.write(bytes)
-            output.flush()
-        } catch (e: Exception) {
-            throw IOException("Failed to write packet.")
-        }
+    // Packet to payload(BytesArray)
+    fun encodePacket(packet: Packet): ByteArray {
+        val buffer = ByteBuffer.allocate(packet.length)
+
+        buffer.putInt(packet.length)
+        buffer.putInt(packet.type.code)
+        buffer.put(packet.body)
+        return buffer.array()
     }
 }
