@@ -30,6 +30,11 @@ import kotlin.concurrent.thread
 data class ShutdownFlag (var isIntentional: Boolean = false)
 data class ClientState (@Volatile var isRegistered: Boolean = false)
 
+data class FileTransferCommand(
+    val target: String,
+    val filePath: String
+)
+
 data class IncomingFileContext(
     val originalFileName: String,
     val totalSize: Long,
@@ -205,7 +210,10 @@ class ClientSession(
             if (handleInitialRegister(input)) continue
             if (handleNameChange(input)) continue
             if (handleWhisper(input)) continue
-            if (handleFileTransfer(input)) continue
+            handleFileTransfer(input)?.let { cmd ->
+                startFileSendAsync(cmd.target, cmd.filePath)
+                continue
+            }
             if (handleChat(input)) continue
         }
     }
@@ -290,21 +298,29 @@ class ClientSession(
         return true
     }
 
-    internal fun handleFileTransfer(input: String): Boolean {
-        if(!input.startsWith("/f ")) return false
+    internal fun handleFileTransfer(input: String): FileTransferCommand? {
+        if(!input.startsWith("/f ")) return null
 
         val parts = input.split(" ", limit = 3)
 
         if (parts.size < 3) {
             println("Usage: /f <user_name> <file_name_with_path>")
-            return true
+            return null
         }
 
-        val target = parts[1]
-        val filePath = parts[2]
+        return FileTransferCommand(
+            target = parts[1],
+            filePath = parts[2]
+        )
+    }
 
-        sendFile(target, filePath)
-        return true
+    private fun startFileSendAsync(target: String, filePath: String) {
+        thread (
+            isDaemon = true,
+            name = "file-sender-$target"
+        ) {
+            sendFile(target, filePath)
+        }
     }
 
     private fun sendFile(target: String, filePath: String) {
@@ -324,7 +340,7 @@ class ClientSession(
         sendPacket(PacketType.FILE_SEND_REQUEST, FileSendRequestDTO(target, transferId, fileName, fileSize))
 
         // 2. Stream file chunks
-        val buffer = ByteArray(64 * 1024)
+        val buffer = ByteArray(1024 * 1024)
         var seq = 0
 
         try {
