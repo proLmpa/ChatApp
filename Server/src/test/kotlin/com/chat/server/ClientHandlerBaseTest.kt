@@ -2,10 +2,9 @@ package com.chat.server
 
 import com.chat.share.ChatMessageDTO
 import com.chat.share.ConnectionService
+import com.chat.share.JsonUtil
 import com.chat.share.Packet
 import com.chat.share.PacketType
-import com.chat.share.Protocol
-import com.chat.share.Protocol.createPacket
 import com.chat.share.RegisterNameDTO
 import com.chat.share.ServerInfoDTO
 import com.chat.share.UpdateNameDTO
@@ -32,8 +31,12 @@ open class ClientHandlerBaseTest {
     }
 
     protected inline fun <reified T> packet(type: PacketType, dto: T): Packet {
-        val bytes = createPacket(type, dto)
-        return Protocol.readPacket(bytes.inputStream())
+        val body = JsonUtil.serializeToJsonBytes(dto)
+        return Packet(
+            length = 8 + body.size,
+            type = type,
+            body = body
+        )
     }
 
     protected fun registerNamePacket(name: String): Packet =
