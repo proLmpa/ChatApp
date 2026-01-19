@@ -49,7 +49,7 @@ class ClientSession(
     private val logger = KotlinLogging.logger {}
 
     private val shutdownFlag = ShutdownFlag(false)
-    private val clientState = ClientState(false)
+    val clientState = ClientState(false)
 
     private val incomingFile = ConcurrentHashMap<String, IncomingFileContext>()
 
